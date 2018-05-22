@@ -88,7 +88,7 @@ class User extends BaseModel
         $TokenModel = new Token();
         $id = $TokenModel->get_id();
         $secret = $TokenModel->checkUser();
-        if ($secret != 32){
+        if ((int)$secret < 30){
             exit(json_encode([
                 'code' => 403,
                 'msg' => '权限不足！'
@@ -116,7 +116,7 @@ class User extends BaseModel
         }
         $info = $user->where([
             'id' => $uid
-        ])->field('username,major')->find();
+        ])->find();
         if (!$info){
             throw new BaseException([
                 'msg' => '未找到该用户，可能是参数有误'
@@ -124,124 +124,91 @@ class User extends BaseModel
         }
         //结果的数组
         $result = [];
+        $result['user_id'] = $info['id'];
         $result['username'] = $info['username'];
         $result['major'] = $info['major'];
-        //出席，请假，缺席
-        $attend = 0;
-        $ask_leave = 0;
-        $absence = 0;
-        $early = 0;
-        $late = 0;
+        $result['number'] = $info['number'];
         $meeting_memebr = new Meeting_member();
         $meeting = new Meeting();
         //查到用户所在会议的id和这场会议是否出席
         $term = $data['term'];
         $now_time = time();
         $result['meeting'] = [];
-        if ($term == 'all'){
+        $result['sign_meeting'] = [];
+
+
+        //已结束的
+        $t = str_replace('-','',$term);
+        //把本学期学时找出来
+        $result['period'] = (string)$this->find_period($uid,$t);
+
             //出勤率要在已结束的里面找
-            $re = $meeting_memebr->where([
-                'user_id' => $uid
-            ])->where('end_time','<',$now_time)->order([
-                'end_time' => 'desc'
-            ])->field('meeting_id,ask_leave,attend,sign_out')->select();
-            //如果没有任何会议的话就可以直接置零了
-            if ($re){
-                $i = 0;
-                foreach ($re as $v){
-                    $meeting_id = $v['meeting_id'];
-                    $in = $meeting->where([
-                        'id' => $meeting_id
-                    ])->field('name,position,date1,date2,date3,time1,time2')->find();
-                    $result['meeting'][$i]['meeting_id'] = $v['meeting_id'];
-                    $result['meeting'][$i]['name'] = $in['name'];
-                    $result['meeting'][$i]['position'] = $in['position'];
-                    $result['meeting'][$i]['year'] = $in['date1'];
-                    $result['meeting'][$i]['month'] = $in['date2'];
-                    $result['meeting'][$i]['day'] = $in['date3'];
-                    $result['meeting'][$i]['hour'] = $in['time1'];
-                    $result['meeting'][$i]['minute'] = $in['time2'];
-                    $result['meeting'][$i]['over'] = '已结束';
-                    //先看是否请假
-                    if ((int)$v['ask_leave'] == 1){
-                        $ask_leave++;
-                        $result['meeting'][$i]['state'] = '请假';
-                        $i++;
-                        continue;
-                    }
-                    if ((int)$v['attend'] == 1 && (int)$v['sign_out'] == 1){
-                        $result['meeting'][$i]['state'] = '出席';
-                        $attend++;
-                    }elseif ((int)$v['attend'] == 1 && (int)$v['sign_out'] == 0){
-                        $result['meeting'][$i]['state'] = '早退';
-                        $early++;
-                    }elseif ((int)$v['attend'] == 0 && (int)$v['sign_out'] == 1){
-                        $result['meeting'][$i]['state'] = '迟到';
-                        $late++;
-                    }else{
-                        //未请假未出席就是缺席
-                        $result['meeting'][$i]['state'] = '缺席';
-                        $absence++;
-                    }
-                    $i++;
+        $re = $meeting_memebr->where([
+            'user_id' => $uid,
+            'term' => (int)$t
+        ])->where('end_time','<',$now_time)->order([
+            'end_time' => 'desc'
+        ])->field('meeting_id,attend,sign_out')->select();
+        //如果没有任何会议的话就可以直接置零了
+        if ($re){
+            $i = 0;
+            foreach ($re as $v){
+                $meeting_id = $v['meeting_id'];
+                $in = $meeting->where([
+                    'id' => $meeting_id
+                ])->field('name,position,period,date1,date2,date3,time1,time2,re_end_time,photo')->find();
+                $result['meeting'][$i]['meeting_id'] = $v['meeting_id'];
+                $result['meeting'][$i]['name'] = $in['name'];
+                $result['meeting'][$i]['position'] = $in['position'];
+                $result['meeting'][$i]['period'] = $in['period'];
+                $result['meeting'][$i]['year'] = $in['date1'];
+                $result['meeting'][$i]['month'] = $in['date2'];
+                $result['meeting'][$i]['day'] = $in['date3'];
+                $result['meeting'][$i]['time'] = $in['time1'].':'.$in['time2'].'-'.$in['re_end_time'];
+                $result['meeting'][$i]['over'] = '已结束';
+                $result['meeting'][$i]['photo'] = config('setting.image_root').$in['photo'];
+                if ((int)$v['attend'] == 1 && (int)$v['sign_out'] == 1){
+                    $result['meeting'][$i]['state'] = '出席';
+                }elseif ((int)$v['attend'] == 1 && (int)$v['sign_out'] == 0){
+                    $result['meeting'][$i]['state'] = '早退';
+                }elseif ((int)$v['attend'] == 0 && (int)$v['sign_out'] == 1){
+                    $result['meeting'][$i]['state'] = '迟到';
+                }else{
+                    //未请假未出席就是缺席
+                    $result['meeting'][$i]['state'] = '缺席';
                 }
-            }
-        }else{
-            $t = str_replace('-','',$term);
-            //出勤率要在已结束的里面找
-            $re = $meeting_memebr->where([
-                'user_id' => $uid,
-                'term' => (int)$t
-            ])->where('end_time','<',$now_time)->order([
-                'end_time' => 'desc'
-            ])->field('meeting_id,ask_leave,attend,sign_out')->select();
-            //如果没有任何会议的话就可以直接置零了
-            if ($re){
-                $i = 0;
-                foreach ($re as $v){
-                    $meeting_id = $v['meeting_id'];
-                    $in = $meeting->where([
-                        'id' => $meeting_id
-                    ])->field('name,position,date1,date2,date3,time1,time2')->find();
-                    $result['meeting'][$i]['meeting_id'] = $v['meeting_id'];
-                    $result['meeting'][$i]['name'] = $in['name'];
-                    $result['meeting'][$i]['position'] = $in['position'];
-                    $result['meeting'][$i]['year'] = $in['date1'];
-                    $result['meeting'][$i]['month'] = $in['date2'];
-                    $result['meeting'][$i]['day'] = $in['date3'];
-                    $result['meeting'][$i]['hour'] = $in['time1'];
-                    $result['meeting'][$i]['minute'] = $in['time2'];
-                    $result['meeting'][$i]['over'] = '已结束';
-                    //先看是否请假
-                    if ((int)$v['ask_leave'] == 1){
-                        $ask_leave++;
-                        $result['meeting'][$i]['state'] = '请假';
-                        $i++;
-                        continue;
-                    }
-                    if ((int)$v['attend'] == 1 && (int)$v['sign_out'] == 1){
-                        $result['meeting'][$i]['state'] = '出席';
-                        $attend++;
-                    }elseif ((int)$v['attend'] == 1 && (int)$v['sign_out'] == 0){
-                        $result['meeting'][$i]['state'] = '早退';
-                        $early++;
-                    }elseif ((int)$v['attend'] == 0 && (int)$v['sign_out'] == 1){
-                        $result['meeting'][$i]['state'] = '迟到';
-                        $late++;
-                    }else{
-                        //未请假未出席就是缺席
-                        $result['meeting'][$i]['state'] = '缺席';
-                        $absence++;
-                    }
-                    $i++;
-                }
+                $i++;
             }
         }
-        $result['attend'] = $attend;
-        $result['ask_leave'] = $ask_leave;
-        $result['absence'] = $absence;
-        $result['early'] = $early;
-        $result['late'] = $late;
+
+        //已报名的
+        $sign = Db::table('sign_list sign,meeting meeting')
+            ->where('sign.meeting_id=meeting.id')
+            ->where('meeting.end_time','>=',(string)time())
+            ->order(['meeting.end_time' => 'desc'])
+            ->select();
+
+        if ($sign){
+            $i = 0;
+            foreach ($sign as $in){
+                $result['sign_meeting'][$i]['meeting_id'] = $in['meeting_id'];
+                $result['sign_meeting'][$i]['name'] = $in['name'];
+                $result['sign_meeting'][$i]['position'] = $in['position'];
+                $result['sign_meeting'][$i]['period'] = $in['period'];
+                $result['sign_meeting'][$i]['year'] = $in['date1'];
+                $result['sign_meeting'][$i]['month'] = $in['date2'];
+                $result['sign_meeting'][$i]['day'] = $in['date3'];
+                $result['sign_meeting'][$i]['time'] = $in['time1'].':'.$in['time2'].'-'.$in['re_end_time'];
+                if ((int)time() >= (int)$in['begin']){
+                    $result['sign_meeting'][$i]['over'] = '已开始';
+                }else{
+                    $result['sign_meeting'][$i]['over'] = '未开始';
+                }
+                $result['sign_meeting'][$i]['photo'] = config('setting.image_root').$in['photo'];
+                $i++;
+            }
+        }
+
         return json_encode([
             'code' => 200,
             'msg' => $result
@@ -265,51 +232,41 @@ class User extends BaseModel
         //查到用户所在会议的id和这场会议是否出席
         $now_time = time();
         //出勤率要在已结束的里面找
-        $re = $meeting_memebr->where([
-            'user_id' => $uid
-        ])->where('end_time','>',$now_time)->order([
-            'begin' => 'desc'
-        ])->field('meeting_id,ask_leave,attend,begin,sign_out')->select();
+        $re = Db::table('meeting')
+            ->where('enter_end','>',$now_time)
+            ->field('id,name,position,date1,date2,date3,time1,time2,period,begin,photo')
+            ->select();
         //如果没有任何会议的话就可以直接置零了
         if ($re){
             $i = 0;
-            foreach ($re as $v){
-                $meeting_id = $v['meeting_id'];
-                $in = $meeting->where([
-                    'id' => $meeting_id
-                ])->field('name,position,date1,date2,date3,time1,time2')->find();
-                $result[$i]['meeting_id'] = $v['meeting_id'];
+            foreach ($re as $in){
+                $meeting_id = $in['id'];
+                $result[$i]['meeting_id'] = $in['id'];
                 $result[$i]['name'] = $in['name'];
                 $result[$i]['position'] = $in['position'];
                 $result[$i]['year'] = $in['date1'];
                 $result[$i]['month'] = $in['date2'];
                 $result[$i]['day'] = $in['date3'];
-                $result[$i]['hour'] = $in['time1'];
-                $result[$i]['minute'] = $in['time2'];
-                if ((int)$now_time < (int)$v['begin']){
-                    $result[$i]['over'] = '未开始';
-                    $result[$i]['state'] = '未签到';
+                $result[$i]['period'] = $in['period'];
+                $result[$i]['photo'] = config('setting.image_root').$in['photo'];
+                $sign_list = Db::table('sign_list')
+                    ->where([
+                        'meeting_id' => $meeting_id
+                    ])->select();
+                if (!$sign_list){
+                    $result[$i]['sign_number'] = '0';
                 }else{
-                    $result[$i]['over'] = '已开始';
-                    //先看是否请假
-                    if ((int)$v['ask_leave'] == 1){
-                        $result[$i]['state'] = '请假';
-                        $i++;
-                        continue;
-                    }
-                    if ((int)$v['attend'] == 1 && (int)$v['sign_out'] == 1){
-                        $result[$i]['state'] = '已签到';
-                    }elseif ((int)$v['attend'] == 1 && (int)$v['sign_out'] == 0){
-                        $result[$i]['state'] = '未签退';
-                    }elseif ((int)$v['attend'] == 0 && (int)$v['sign_out'] == 1){
-                        $result[$i]['state'] = '迟到';
-                    }else{
-                        $result[$i]['state'] = '未签到';
-                    }
+                    $result[$i]['sign_number'] = (string)count($sign_list);
                 }
+                $result[$i]['begin_time'] = $in['time1'].':'.$in['time2'];
+//                $result[$i]['end_time'] = $in['re_end_time'];
+
+                $result[$i]['time_distance'] = abs((int)$in['begin'] - (int)time());
 
                 $i++;
             }
+            //排个序
+            array_multisort(array_column($result,'time_distance'),SORT_ASC,$result);
         }
         return json_encode([
             'code' => 200,
@@ -398,15 +355,15 @@ class User extends BaseModel
             ->where([
                 'user_id' => $uid,
                 'meeting_id' => $data['meeting_id']
-            ])->field('attend,ask_leave,end_time,begin,sign_out')->find();
+            ])->field('attend,end_time,begin,sign_out,term')->find();
         if (!$check){
             exit(json_encode([
                 'code' => 400,
                 'msg' => '您未参加此次会议'
             ]));
         }
+
         $attend = (int)$check['attend'];
-        $ask_leave = (int)$check['ask_leave'];
         $sign_out = (int)$check['sign_out'];
         $end_time = (int)$check['end_time'];
         $begin = (int)$check['begin'];
@@ -425,11 +382,6 @@ class User extends BaseModel
             exit(json_encode([
                 'code' => 400,
                 'msg' => '您已经签过到了'
-            ]));
-        }elseif ($ask_leave == 1){
-            exit(json_encode([
-                'code' => 400,
-                'msg' => '您已经请假，不可签到'
             ]));
         }else{
             $result = Db::table('meeting_member')
@@ -494,7 +446,7 @@ class User extends BaseModel
             ->where([
                 'user_id' => $uid,
                 'meeting_id' => $data['meeting_id']
-            ])->field('attend,ask_leave,end_time,begin,sign_out')->find();
+            ])->field('attend,end_time,begin,sign_out')->find();
         if (!$check){
             exit(json_encode([
                 'code' => 400,
@@ -502,7 +454,6 @@ class User extends BaseModel
             ]));
         }
         $sign_out = (int)$check['sign_out'];
-        $ask_leave = (int)$check['ask_leave'];
         $end_time = (int)$check['end_time'];
         $begin = (int)$check['begin'];
         $time = (int)time();
@@ -521,11 +472,6 @@ class User extends BaseModel
                 'code' => 400,
                 'msg' => '您已经签过退了'
             ]));
-        }elseif ($ask_leave == 1){
-            exit(json_encode([
-                'code' => 400,
-                'msg' => '您已经请假，不可签到'
-            ]));
         }else{
             $result = Db::table('meeting_member')
                 ->where([
@@ -541,6 +487,224 @@ class User extends BaseModel
         return json_encode([
             'code' => 200,
             'msg' => '签到成功'
+        ]);
+    }
+
+    public function single_meeting($data){
+        $TokenModel = new Token();
+
+        //通过token获取id并且判断token是否有效
+        $uid = $TokenModel->get_id();
+        $secret = $TokenModel->checkUser();
+        if ($secret != 16){
+            throw new PowerException();
+        }
+
+        $this->have_key_validate([
+            'meeting_id' => '无会议标识！'
+        ],$data);
+
+        $meeting_id = $data['meeting_id'];
+        //结果的数组
+        $result = [];
+        //查到用户所在会议的id和这场会议是否出席
+        $now_time = time();
+        //出勤率要在已结束的里面找
+        $in = Db::table('meeting')
+            ->where('id','=',$meeting_id)
+            ->field('id,name,position,date1,date2,date3,time1,time2,period,begin,end_time,enter_begin,enter_end,description,department,type,photo,re_end_time')
+            ->find();
+        //如果没有任何会议的话就可以直接置零了
+        if ($in){
+            $meeting_id = $in['id'];
+            $result['meeting_id'] = $in['id'];
+            $result['name'] = $in['name'];
+            $result['position'] = $in['position'];
+            $result['year'] = $in['date1'];
+            $result['month'] = $in['date2'];
+            $result['day'] = $in['date3'];
+            $result['period'] = $in['period'];
+            $result['description'] = $in['description'];
+            $result['department'] = $in['department'];
+            $result['type'] = $in['type'];
+            $result['photo'] = config('setting.image_root').$in['photo'];
+            $sign_list = Db::table('sign_list')
+                ->where([
+                    'meeting_id' => $meeting_id
+                ])->select();
+            if (!$sign_list){
+                $result['sign_number'] = '0';
+            }else{
+                $result['sign_number'] = (string)count($sign_list);
+            }
+            $result['time'] = $in['time1'].':'.$in['time2'].'-'.$in['re_end_time'];
+            $result['sign_begin_time'] = date("Y年m月d",$in['enter_begin']);
+            $result['sign_end_time'] = date("Y年m月d",$in['enter_end']);
+            $sign_list = Db::table('sign_list')
+                ->where([
+                    'meeting_id' => $meeting_id,
+                    'user_id' => $uid
+                ])->find();
+            //看看会议在什么状态
+            $flag = 0;
+            if ($now_time <= (int)$in['end_time'] && $now_time >= (int)$in['begin']){
+                $flag = 1;    //讲座正在进行
+                $result['meeting_status'] = '已开始';
+            }elseif ($now_time > (int)$in['end_time']){
+                $flag = 2;    //讲座已结束
+                $result['meeting_status'] = '已结束';
+            }elseif ($now_time < (int)$in['begin']){
+                $flag = 3;    //讲座未开始
+                $result['meeting_status'] = '未开始';
+            }
+            if ($now_time <= (int)$in['enter_end'] && $now_time >= (int)$in['enter_begin']){
+                $flag = 4;    //讲座正在报名
+                $result['meeting_status'] = '正在报名';
+            }
+            if (!$sign_list){
+                $result['user_status'] = '未报名';
+            }else{
+                $member = Db::table('meeting_member')->where(['meeting_id' => $meeting_id,'user_id' => $uid])->find();
+                if (!$member){
+                    $result['user_status'] = '待审核';
+                }elseif($flag == 4||$flag == 3){
+                    $result['user_status'] = '报名成功';
+                }elseif($flag == 1){
+                    if ($member['attend'] == 1 && $member['sign_out'] == 1){
+                        $result['user_status'] = '已签到已签退';
+                    }elseif ($member['attend'] == 1 && $member['sign_out'] == 0){
+                        $result['user_status'] = '已签到未签退';
+                    }elseif ($member['attend'] == 0 && $member['sign_out'] == 1){
+                        $result['user_status'] = '未签到已签退';
+                    }elseif ($member['attend'] == 0 && $member['sign_out'] == 0){
+                        $result['user_status'] = '未签到未签退';
+                    }
+                }elseif($flag == 2){
+                    if ($member['attend'] == 1 && $member['sign_out'] == 1){
+                        $result['user_status'] = '出席';
+                    }elseif ($member['attend'] == 1 && $member['sign_out'] == 0){
+                        $result['user_status'] = '早退';
+                    }elseif ($member['attend'] == 0 && $member['sign_out'] == 1){
+                        $result['user_status'] = '迟到';
+                    }elseif ($member['attend'] == 0 && $member['sign_out'] == 0){
+                        $result['user_status'] = '缺席';
+                    }
+                }
+            }
+//                $result['end_time'] = $in['re_end_time'];
+
+        }else{
+            throw new BaseException([
+                'msg' => '未找到该会议'
+            ]);
+        }
+        return json_encode([
+            'code' => 200,
+            'msg' => $result
+        ]);
+    }
+
+    public function show_term(){
+        $TokenModel = new Token();
+        $id = $TokenModel->get_id();
+        $secret = $TokenModel->checkUser();
+        if ($secret != 16){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '权限不足！'
+            ]));
+        }
+
+        $meeting = new Meeting();
+        //查学期
+        $result = $meeting->distinct(true)->field('term')->order([
+            'term' => 'desc'
+        ])->select();
+        $i = 0;
+        $arr = [];
+        foreach ($result as $v){
+            $arr[$i] = substr($v['term'],0,4).'-'.substr($v['term'],4,4).'-'.substr($v['term'],8,1);
+            $i++;
+        }
+        return json([
+            'code' => 200,
+            'msg' => $arr
+        ]);
+    }
+
+    //报名取消报名
+    public function sign_in_out($data){
+        $TokenModel = new Token();
+
+        //通过token获取id并且判断token是否有效
+        $uid = $TokenModel->get_id();
+        $secret = $TokenModel->checkUser();
+        if ($secret != 16){
+            throw new PowerException();
+        }
+
+        $this->have_key_validate([
+            'meeting_id' => '无会议标识！'
+        ],$data);
+
+        $meeting_id = $data['meeting_id'];
+
+        //检查是否报名
+        $check_sign = Db::table('sign_list')
+            ->where([
+                'user_id' => $uid,
+                'meeting_id' => $meeting_id
+            ])->find();
+        if ($check_sign){
+            Db::startTrans();
+            $result1 = Db::table('sign_list')
+                ->where([
+                    'user_id' => $uid,
+                    'meeting_id' => $meeting_id
+                ])->delete();
+            if (!$result1){
+                Db::rollback();
+                throw new UpdateException([
+                    'msg' => '取消报名失败！'
+                ]);
+            }
+            //找找成员列表有没有，有的话也删掉
+            if (Db::table('meeting_member')
+                ->where([
+                    'meeting_id' => $meeting_id,
+                    'user_id' => $uid
+                ])->find()){
+                $result2 = Db::table('meeting_member')
+                    ->where([
+                        'meeting_id' => $meeting_id,
+                        'user_id' => $uid
+                    ])->delete();
+                if (!$result2){
+                    Db::rollback();
+                    throw new UpdateException([
+                        'msg' => '取消报名失败'
+                    ]);
+                }
+            }
+            Db::commit();
+        }else{
+            //没找到的话就开始报名
+            $result = Db::table('sign_list')
+                ->insert([
+                    'user_id' => $uid,
+                    'meeting_id' => $meeting_id,
+                    'time' => (string)time()
+                ]);
+            if (!$result){
+                throw new UpdateException([
+                    'msg' => '报名失败'
+                ]);
+            }
+        }
+
+        return json([
+            'code' => 200,
+            'msg' => 'success'
         ]);
     }
 }

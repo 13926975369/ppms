@@ -19,6 +19,7 @@ use app\ppms\validate\LoginValidate;
 use think\Cache;
 use think\Collection;
 use think\Db;
+use think\Request;
 use think\Validate;
 
 class Index extends Collection
@@ -37,29 +38,31 @@ class Index extends Collection
         header('Access-Control-Allow-Headers:x-requested-with,content-type');
 
         $post = input('post.');
+
+
         if (!$post){
             exit(json_encode([
-                'code' => 403,
+                'code' => 400,
                 'msg' => '未传入任何参数！'
             ]));
         }
         if (!array_key_exists('token',$post)){
             exit(json_encode([
-                'code' => 403,
+                'code' => 400,
                 'msg' => '第一项参数缺失，禁止请求！'
             ]));
         }
         $token = $post['token'];
         if (!array_key_exists('type',$post)){
             exit(json_encode([
-                'code' => 403,
+                'code' => 400,
                 'msg' => '第二项参数缺失，禁止请求！'
             ]));
         }
         $type = $post['type'];
         if (!array_key_exists('data',$post)){
             exit(json_encode([
-                'code' => 403,
+                'code' => 400,
                 'msg' => '第三项参数缺失，禁止请求！'
             ]));
         }
@@ -210,6 +213,12 @@ class Index extends Collection
         }elseif ($type == 'A009'){
             $result = $user->sign_out($data);
             return $result;
+        }elseif ($type == 'A010'){
+            $result = $user->single_meeting($data);
+            return $result;
+        }elseif ($type == 'A012'){
+            $result = $user->sign_in_out($data);
+            return $result;
         }elseif ($type == 'B001'){
             //管理员登录
             //登录
@@ -242,35 +251,37 @@ class Index extends Collection
             }
             //查id
             $id = $is_exist['id'];
-            if ($is_exist['scope'] != 32){
-                exit(json_encode([
-                    'code' => 403,
-                    'msg' => '权限不足！'
-                ]));
-            }
 
             //获得token
-            $tk = $admin_token->grantToken($id);
+            $tk = $admin_token->grantToken($id,$is_exist['scope']);
+            if ($is_exist['scope'] == '32'){
+                $rank = 1;
+            }elseif ($is_exist['scope'] == '31'){
+                $rank = 2;
+            }elseif ($is_exist['scope'] == '30'){
+                $rank = 3;
+            }else{
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '无该管理员！'
+                ]));
+            }
             return json([
                 'code' => 200,
-                'msg' => $tk
+                'msg' => [
+                    'rank' => $rank,
+                    'token' => $tk
+                ]
             ]);
         }elseif ($type=='B002'){
             $result = $user->get_admin_name();
             return $result;
         }elseif ($type == 'B003'){
             //发布会议
-            $result = $Super->set_meeting($data);
+            $result = $Super->set_meeting(json_decode($data,true));
             return $result;
         }elseif ($type == 'B004'){
             $id = $TokenModel->get_id();
-            $secret = $TokenModel->checkUser();
-            if ($secret != 32){
-                exit(json_encode([
-                    'code' => 403,
-                    'msg' => '权限不足！'
-                ]));
-            }
             cache($token, NULL);
             return json_encode([
                 'code' => 200,
@@ -304,10 +315,6 @@ class Index extends Collection
             //删除会议
             $result = $Super->delete_meeting($data);
             return $result;
-        }elseif ($type == 'B012'){
-            //删除成员
-            $result = $Super->delete_member($data);
-            return $result;
         }elseif ($type == 'B013'){
             //展示每个会议每条成员情况（出勤查看）
             $result = $Super->attendance_check($data);
@@ -320,46 +327,126 @@ class Index extends Collection
             //改变会议成员出席情况
             $result = $Super->search($data);
             return $result;
-        }elseif ($type == 'B016'){
-            //改变会议成员出席情况
-            $result = $Super->create_attendance_check($data);
-            return $result;
         }elseif ($type == 'B017'){
             //搜索出勤详情导出
             $result = $Super->create_search($data);
             return $result;
         }elseif ($type == 'B018'){
-            //搜索出勤详情导出
+            //生成签到二维码
             $result = $Super->create_code($data);
             return $result;
         }elseif ($type == 'B019'){
             //修改会议
-            $result = $Super->change_meeting($data);
+            $result = $Super->change_meeting(json_decode($data,true));
             return $result;
         }elseif ($type == 'B020'){
             //生成签退二维码
             $result = $Super->create_sign_out_code($data);
             return $result;
-        }elseif ($type == 'B021'){
-            $result = $Super->change_single_state($data);
+        }
+//        elseif ($type == 'B021'){
+//            $result = $Super->change_single_state($data);
+//            return $result;
+//        }elseif ($type == 'B022'){
+//            $result = $Super->create_single_meeting($data);
+//            return $result;
+//        }
+//        elseif ($type == 'B023'){
+//            $result = $Super->be_start($data);
+//            return $result;
+//        }elseif ($type == 'B024'){
+//            $result = $Super->be_end($data);
+//            return $result;
+//        }
+        elseif($type == 'B025'){
+            $id = $TokenModel->get_id();
+            $secret = $TokenModel->checkUser();
+            if ((int)$secret < 31){
+                exit(json_encode([
+                    'code' => 403,
+                    'msg' => '权限不足！'
+                ]));
+            }
+            $select = Db::table('user')
+                ->field('major,number')
+                ->select();
+            if (!$select){
+                $result = json_encode([
+                    'code' => 200,
+                    'msg' => []
+                ]);
+            }else{
+                //当前的专业
+                $now_major = "";
+                $flag = -1;
+                //信息数组
+                $info = [];
+                foreach ($select as $v){
+                    if ($v['major'] != $now_major){
+                        $now_major = $v['major'];
+                        $flag++;
+                    }
+                    $info[$flag]['major'] = $now_major;
+                    if (!array_key_exists('year',$info[$flag])){
+                        $info[$flag]['year'] = [];
+                    }
+                    $year = $info[$flag]['year'];
+                    $now_year = substr($v['number'],0,4);
+                    if (!in_array($now_year,$year)){
+                        array_push($info[$flag]['year'],$now_year);
+                    }
+                }
+
+                $result = json_encode([
+                    'code' => 200,
+                    'msg' => $info
+                ]);
+            }
             return $result;
-        }elseif ($type == 'B022'){
-            $result = $Super->create_single_meeting($data);
+        }elseif($type == 'B026'){
+            $id = $TokenModel->get_id();
+            $result = $Super->show_meeting_sign($data);
             return $result;
-        }elseif ($type == 'B023'){
-            $result = $Super->be_start($data);
+        }elseif($type == 'B027'){
+            $id = $TokenModel->get_id();
+            $result = $Super->change_check($data);
             return $result;
-        }elseif ($type == 'B024'){
-            $result = $Super->be_end($data);
+        }elseif($type == 'B028'){
+            $id = $TokenModel->get_id();
+            $result = $Super->single_meeting_member($data);
+            return $result;
+        }elseif($type == 'B029'){
+            $id = $TokenModel->get_id();
+            $result = $Super->create_single_meeting_member($data);
+            return $result;
+        }elseif($type == 'B030'){
+            $id = $TokenModel->get_id();
+            $result = $Super->create_show_meeting_sign($data);
+            return $result;
+        }elseif($type == 'B031'){
+            $id = $TokenModel->get_id();
+            $result = $Super->create_show_checked($data);
+            return $result;
+        }elseif($type == 'B032'){
+            $id = $TokenModel->get_id();
+            $result = $Super->create_show_student($data);
+            return $result;
+        }elseif($type == 'B033'){
+            //审核会议
+            $result = $Super->apply_meeting(json_decode($data,true));
+            return $result;
+        }elseif($type == 'B034'){
+            //审核会议
+            $result = $Super->show_check_all_meeting($data);
             return $result;
         }
 //        elseif ($type == 'BBBB'){
-////            //搜索出勤详情导出
-////            $result = $Super->in(COMMON_PATH.'static/member.xlsx');
-////            return $result;
+//            //搜索出勤详情导出
+//            $result = $Super->in(COMMON_PATH.'static/member.xlsx');
+//            return $result;
 ////
 ////            //删除测试账号
-////            Db::table('meeting_member')->where('user_id' ,'<',200)->delete();
+////            Db::table('user')->where('id' ,'>',267)->delete();
 //        }
         else{
             exit(json_encode([

@@ -23,7 +23,10 @@ class SetMeeting extends BaseValidate
         'position' => 'require',
         'term1' => 'require|fourcheck',
         'term2' => 'require|fourcheck',
-        'term3' => 'require|onecheck',
+        'term3' => 'require|number|length:1',
+        'enter_begin' => 'require|timecheck',
+        'enter_end' => 'require|timecheck',
+        'end_time' => 'require|endcheck'
     ];
 
     protected $message = [
@@ -37,6 +40,9 @@ class SetMeeting extends BaseValidate
         'term1.require' => '学期不能为空！',
         'term2.require' => '学期不能为空！',
         'term3.require' => '学期不能为空！',
+        'enter_begin.require' => '报名开始时间不能为空！',
+        'enter_end.require' => '报名结束时间不能为空！',
+        'end_time.require' => '结束时间不能为空！'
     ];
 
     protected $field = [
@@ -50,6 +56,8 @@ class SetMeeting extends BaseValidate
         'term1' => '学期',
         'term2' => '学期',
         'term3' => '学期',
+        'enter_begin' => '报名开始时间',
+        'enter_end' => '报名结束时间',
     ];
 
     protected function fourcheck($value,$rule = '',$date = '',$field=''){
@@ -57,17 +65,20 @@ class SetMeeting extends BaseValidate
             return true;
         }else{
             if ($field=='date1'){
-                throw new BaseException([
-                    'msg' => "日期的第一个空必须由四位数字组成！"
-                ]);
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '日期的第一个空必须由四位数字组成！'
+                ]));
             }elseif ($field == 'term1'){
-                throw new BaseException([
-                    'msg' => "学期的第一个空必须由四位数字组成！"
-                ]);
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '学期的第一个空必须由四位数字组成！'
+                ]));
             }elseif ($field == 'term2'){
-                throw new BaseException([
-                    'msg' => "学期的第二个空必须由四位数字组成！"
-                ]);
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '学期的第二个空必须由四位数字组成！'
+                ]));
             }
 
         }
@@ -77,9 +88,32 @@ class SetMeeting extends BaseValidate
         if(preg_match("/^[0-9]{1}$/",$value)){
             return true;
         }else{
-            throw new BaseException([
-                'msg' => "学期第三个空必须由一位数字组成！"
-            ]);
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '学期第三个空必须由一位数字组成！'
+            ]));
+        }
+    }
+
+    protected function timecheck($value,$rule = '',$date = '',$field=''){
+        if(preg_match("/^[0-9]{4}\-[0-9]{2}\-[0-9]{2}\-[0-9]{2}\-[0-9]{2}$/",$value)){
+            return true;
+        }else{
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '报名时间不符合xxxx-xx-xx-xx-xx！'
+            ]));
+        }
+    }
+
+    protected function endcheck($value,$rule = '',$date = '',$field=''){
+        if(preg_match("/^[0-9]{2}\:{1}[0-9]{2}$/",$value)){
+            return true;
+        }else{
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '结束时间不符合格式xx:xx！'
+            ]));
         }
     }
 
@@ -88,21 +122,25 @@ class SetMeeting extends BaseValidate
             return true;
         }else{
             if ($field=='date2'){
-                throw new BaseException([
-                    'msg' => "日期的第二个空必须由两位数字组成！"
-                ]);
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '学期第三个空必须由一位数字组成！'
+                ]));
             }elseif ($field == 'date3'){
-                throw new BaseException([
-                    'msg' => "日期的第三个空必须由两位数字组成！"
-                ]);
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '日期的第三个空必须由两位数字组成！'
+                ]));
             }elseif ($field == 'time1'){
-                throw new BaseException([
-                    'msg' => "时间的第一个空必须由两位数字组成！"
-                ]);
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '时间的第一个空必须由两位数字组成！'
+                ]));
             }elseif ($field == 'time2'){
-                throw new BaseException([
-                    'msg' => "时间的第二个空必须由两位数字组成！"
-                ]);
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '时间的第二个空必须由两位数字组成！'
+                ]));
             }
         }
     }

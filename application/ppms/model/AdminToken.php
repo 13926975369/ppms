@@ -17,7 +17,7 @@ class AdminToken extends Token
     protected $secret;
     protected $uid;
 
-    public function grantToken($id){
+    public function grantToken($id,$scope){
         //验证id
         (new IDMustBeNumber())->goToCheck([
             'id' => $id
@@ -29,8 +29,8 @@ class AdminToken extends Token
         $key = $this->gettoken();
         $cachedValue['id'] = $id;
         //scope为权限
-        $cachedValue['secret'] = 32;
-        $this->secret  = 32;
+        $cachedValue['secret'] = (int)$scope;
+        $this->secret  = (int)$scope;
         $value = json_encode($cachedValue);
         //设置存活时间
         $expire_in = config('setting.token_expire_in');
