@@ -14,8 +14,8 @@ return [
     'token_salt' => 'akgoiagpelk1d31345613',
     'token_expire_in' => 25920000,
     'cookie_time' => 10800,
-    'image_root' => 'https://www.yiluzou.cn/ppms/public/',
+    'image_root' => 'https://ppms.yiluzou.cn/ppms/public/',
     'user_salt' => 'Quanta',
-    'code_time' => 12
+    'code_time' => 108000
 ];
 

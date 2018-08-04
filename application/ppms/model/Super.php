@@ -16,6 +16,7 @@ use app\ppms\exception\UserExistException;
 use app\ppms\validate\IDMustBeNumber;
 use app\ppms\validate\Search;
 use app\ppms\validate\SetMeeting;
+use app\ppms\validate\ShowCheckMeeting;
 use app\ppms\validate\ShowMeeting;
 use think\Db;
 use think\Loader;
@@ -103,7 +104,7 @@ class Super extends BaseModel
             'enter_end' => '无报名结束时间！',
             'description' => '无内容简介！',
             'end_time' => '无会议结束时间！',
-            'member' => '无会议学期和年级！'
+            'member' => '无会议学期和年级！',
         ],$data);
         (new SetMeeting())->goToCheck($data);
         //过滤
@@ -138,9 +139,9 @@ class Super extends BaseModel
             ]));
         }
         $end_time = $date1.'-'.$date2.'-'.$date3.' '.$end_time.':00';
-        $end_time = strtotime($end_time);
+        $end_time = (int)strtotime($end_time)+1200;
         $begin_time = $date1.'-'.$date2.'-'.$date3.' '.$time1.':'.$time2.':00';
-        $begin_time = strtotime($begin_time);
+        $begin_time = (int)strtotime($begin_time)-1200;
         $enter_begin = strtotime($enter_begin);
         $enter_end = strtotime($enter_end);
 
@@ -169,7 +170,8 @@ class Super extends BaseModel
                 'description' => $description,
                 'enter_end' => $enter_end,
                 'period' => $period,
-                're_end_time' => $re
+                're_end_time' => $re,
+                'publish_id' => $id
             ]);
             if (!$result){
                 Db::rollback();
@@ -210,7 +212,8 @@ class Super extends BaseModel
                 'description' => $description,
                 'enter_end' => $enter_end,
                 'period' => $period,
-                're_end_time' => $re
+                're_end_time' => $re,
+                'publish_id' => $id
             ]);
             if (!$result){
                 Db::rollback();
@@ -436,9 +439,9 @@ class Super extends BaseModel
             ]));
         }
         $end_time = $date1.'-'.$date2.'-'.$date3.' '.$end_time.':00';
-        $end_time = strtotime($end_time);
+        $end_time = (int)strtotime($end_time)+1200;
         $begin_time = $date1.'-'.$date2.'-'.$date3.' '.$time1.':'.$time2.':00';
-        $begin_time = strtotime($begin_time);
+        $begin_time = (int)strtotime($begin_time)-1200;
         $enter_begin = strtotime($enter_begin);
         $enter_end = strtotime($enter_end);
         //入库
@@ -584,6 +587,35 @@ class Super extends BaseModel
             }
         }
 
+        //修改参加会议的表
+        if ($term1==$check['term1']&&$term2==$check['term2']&&$term3==$check['term3']
+            &&$begin_time==$check['begin']&&$end_time==$check['end_time']&&$check['enter_begin'] = $enter_begin&&$enter_end ==$check['enter_end']&&$check['period']==$period){
+
+        }else{
+            if (Db::table('meeting_member')
+                ->where(['meeting_id' => $data['meeting_id']])
+                ->find()){
+                $meeting_member = Db::table('meeting_member')
+                    ->where(['meeting_id' => $data['meeting_id']])
+                    ->update([
+                        'term' => (int)($term1.$term2.$term3),
+                        'begin' => $begin_time,
+                        'end_time' => $end_time,
+                        'enter_begin' => $enter_begin,
+                        'enter_end' => $enter_end,
+                        'period' => $period
+                    ]);
+                if (!$meeting_member){
+                    Db::rollback();
+                    exit(json_encode([
+                        'code' => 503,
+                        'msg' => '修改失败！'
+                    ]));
+                }
+            }
+        }
+
+
         Db::commit();
 
         return json([
@@ -642,8 +674,14 @@ class Super extends BaseModel
         $re_end_time = $result['re_end_time'];
         $end_time1 = $re_end_time[0].$re_end_time[1];
         $end_time2 = $re_end_time[3].$re_end_time[4];
-        $enter_stare = date('Y-m-d-H-i',$result['enter_begin']);
-        $enter_end = date('Y-m-d-H-i',$result['enter_end']);
+        $enter_stare = date('Y-m-d-H:i',$result['enter_begin']);
+        $enter_end = date('Y-m-d-H:i',$result['enter_end']);
+        $publish_id = $result['publish_id'];
+
+        $teach = Db::table('super')->where([
+            'id' => $publish_id
+        ])->find();
+        $teacher = $teach['nickname'];
 
         //截取当前状态
         $flag = (int)$result['begin'];
@@ -697,7 +735,8 @@ class Super extends BaseModel
                 'photo' => config('setting.image_root').$photo,
                 'member' => $member,
                 'enter_begin' => $enter_stare,
-                'enter_end' => $enter_end
+                'enter_end' => $enter_end,
+                'teacher' => $teacher
             ]
         ]);
     }
@@ -963,12 +1002,46 @@ class Super extends BaseModel
                 $msg[$t][$i]['photo'] = config('setting.image_root').$v['photo'];
                 $msg[$t][$i]['state'] = $state;
             }
+            if ($page == 0 && $size == 0){
+                $info = Db::table('check_meeting')
+                    ->order([
+                        'term' => 'desc'
+                    ])
+                    ->select();
+            }else{
+                $start = ($page-1)*$size;
+                $info = Db::table('check_meeting')->limit($start,$size)
+                    ->order([
+                        'term' => 'desc'
+                    ])
+                    ->select();
+            }
+            foreach ($info as $k => $v){
+                $flag = (int)$v['state'];
+                $state = '';
+                if ($flag == 0){
+                    $state .= '待审核';
+                }else{
+                    $state .= '未通过';
+                }
+                $t = $v['term1'].'-'.$v['term2'].'-'.$v['term3'];
+                if (!array_key_exists($t,$msg)) $i = 0;
+                else $i = count($msg[$t]);
+                $msg[$t][$i]['meeting_id'] = $v['id'];
+                $msg[$t][$i]['name'] = $v['name'];
+                $msg[$t][$i]['time'] = $v['date1'].'/'.$v['date2'].'/'.$v['date3'];
+                $msg[$t][$i]['clock'] = $v['time1'].':'.$v['time2'].'-'.$v['re_end_time'];
+                $msg[$t][$i]['position'] = $v['position'];
+                $msg[$t][$i]['period'] = $v['period'];
+                $msg[$t][$i]['photo'] = config('setting.image_root').$v['photo'];
+                $msg[$t][$i]['state'] = $state;
+            }
         }else{
             $t = str_replace('-','',$term);
             if ($page == 0 && $size == 0){
                 $info = $meeting
                     ->where([
-                        'term' => (int)$t
+                        'term' => $t
                     ])
                     ->order([
                         'term' => 'desc'
@@ -978,7 +1051,7 @@ class Super extends BaseModel
                 $start = ($page-1)*$size;
                 $info = $meeting->limit($start,$size)
                     ->where([
-                        'term' => (int)$t
+                        'term' => $t
                     ])
                     ->order([
                         'term' => 'desc'
@@ -1016,6 +1089,44 @@ class Super extends BaseModel
                 $msg[$t][$i]['photo'] = config('setting.image_root').$v['photo'];
                 $msg[$term][$i]['state'] = $state;
 
+                $i++;
+            }
+            if ($page == 0 && $size == 0){
+                $info = Db::table('check_meeting')
+                    ->where([
+                        'term' => $t
+                    ])
+                    ->order([
+                        'term' => 'desc'
+                    ])
+                    ->select();
+            }else{
+                $start = ($page-1)*$size;
+                $info = Db::table('check_meeting')->limit($start,$size)
+                    ->where([
+                        'term' => (int)$t
+                    ])
+                    ->order([
+                        'term' => 'desc'
+                    ])
+                    ->select();
+            }
+            foreach ($info as $k => $v){
+                $flag = (int)$v['state'];
+                $state = '';
+                if ($flag == 0){
+                    $state .= '待审核';
+                }else{
+                    $state .= '未通过';
+                }
+                $msg[$term][$i]['meeting_id'] = $v['id'];
+                $msg[$term][$i]['name'] = $v['name'];
+                $msg[$term][$i]['time'] = $v['date1'].'/'.$v['date2'].'/'.$v['date3'];
+                $msg[$term][$i]['clock'] = $v['time1'].':'.$v['time2'].'-'.$v['re_end_time'];
+                $msg[$t][$i]['position'] = $v['position'];
+                $msg[$t][$i]['period'] = $v['period'];
+                $msg[$t][$i]['photo'] = config('setting.image_root').$v['photo'];
+                $msg[$term][$i]['state'] = $state;
                 $i++;
             }
         }
@@ -1188,7 +1299,7 @@ class Super extends BaseModel
         $TokenModel = new Token();
         $id = $TokenModel->get_id();
         $secret = $TokenModel->checkUser();
-        if ($secret != 32){
+        if ($secret < 31){
             exit(json_encode([
                 'code' => 403,
                 'msg' => '权限不足！'
@@ -1232,8 +1343,21 @@ class Super extends BaseModel
             ->where([
                 'id' => $data['meeting_id']
             ])->find();
-        $term = $check4['term'];
-        $meeting_period = $check4['period'];
+        if (!$check4){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '没有该会议'
+            ]));
+        }
+        if ($secret == 31){
+            $publish_id = $check4['publish_id'];
+            if ($id != $publish_id){
+                exit(json_encode([
+                    'code' => 403,
+                    'msg' => '权限不足！不能删除别人发布会议'
+                ]));
+            }
+        }
 
         //开启事务
         Db::startTrans();
@@ -1244,200 +1368,212 @@ class Super extends BaseModel
             Db::rollback();
             exit(json_encode([
                 'code' => 504,
-                'msg' => '更新出错，请重试！'
+                'msg' => '更新出错，请重试！1'
             ]));
         }
+//        if ($check){
+//            foreach ($check as $item){
+//                //出席
+//                if ($item['attend'] == 1&& $item['sign_out'] == 1){
+//                    $score_check = Db::table('period')
+//                        ->where([
+//                            'term' => $term,
+//                            'user_id' => $item['user_id']
+//                        ])->find();
+//                    if (!$score_check){
+//                        $score = Db::table('period')
+//                            ->insert([
+//                                'term' => $term,
+//                                'user_id' => $item['user_id'],
+//                                'period' => 0
+//                            ]);
+//                        if (!$score){
+//                            Db::rollback();
+//                            exit(json_encode([
+//                                'code' => 504,
+//                                'msg' => '更新出错，请重试！'
+//                            ]));
+//                        }
+//                    }else{
+//                        $score = Db::table('period')
+//                            ->where([
+//                                'term' => $term,
+//                                'user_id' => $item['user_id']
+//                            ])->update([
+//                                'period' => ['exp','period-'.$meeting_period]
+//                            ]);
+//                        if (!$score){
+//                            Db::rollback();
+//                            exit(json_encode([
+//                                'code' => 504,
+//                                'msg' => '更新出错，请重试！'
+//                            ]));
+//                        }
+//                    }
+//
+//                    $all_score = Db::table('user')
+//                        ->where([
+//                            'id' => $item['user_id']
+//                        ])->update([
+//                            'period' => ['exp','period-'.$meeting_period]
+//                        ]);
+//                    if (!$all_score){
+//                        Db::rollback();
+//                        exit(json_encode([
+//                            'code' => 504,
+//                            'msg' => '更新出错，请重试！'
+//                        ]));
+//                    }
+//                }elseif(($item['attend'] == 1&& $item['sign_out'] == 0)||($item['attend'] == 0&& $item['sign_out'] == 1)){
+//                    //早退或迟到
+//                    if (count(Db::table('meeting_member')->where(['attend' => 1,'sign_out' => 0,'user_id' => $item['user_id']])->select()) >= 2
+//                    || count(Db::table('meeting_member')->where(['attend' => 0,'sign_out' => 1,'user_id' => $item['user_id']])->select()) >= 2){
+//                        $score_check = Db::table('period')
+//                            ->where([
+//                                'term' => $term,
+//                                'user_id' => $item['user_id']
+//                            ])->find();
+//                        if (!$score_check){
+//                            $score = Db::table('period')
+//                                ->insert([
+//                                    'term' => $term,
+//                                    'user_id' => $item['user_id'],
+//                                    'period' => 0
+//                                ]);
+//                            if (!$score){
+//                                Db::rollback();
+//                                exit(json_encode([
+//                                    'code' => 504,
+//                                    'msg' => '更新出错，请重试！'
+//                                ]));
+//                            }
+//                        }else{
+//                            $score = Db::table('period')
+//                                ->where([
+//                                    'term' => $term,
+//                                    'user_id' => $item['user_id']
+//                                ])->update([
+//                                    'period' => ['exp','period+0.5']
+//                                ]);
+//                            if (!$score){
+//                                Db::rollback();
+//                                exit(json_encode([
+//                                    'code' => 504,
+//                                    'msg' => '更新出错，请重试！'
+//                                ]));
+//                            }
+//                        }
+//                        $all_score = Db::table('user')
+//                            ->where([
+//                                'id' => $item['user_id']
+//                            ])->update([
+//                                'period' => ['exp','period+0.5']
+//                            ]);
+//                        if (!$all_score){
+//                            Db::rollback();
+//                            exit(json_encode([
+//                                'code' => 504,
+//                                'msg' => '更新出错，请重试！'
+//                            ]));
+//                        }
+//                    }
+//                }else{
+//                    if (count(Db::table('meeting_member')->where(['attend' => 0,'sign_out' => 0,'user_id' => $item['user_id']])->select()) >= 2){
+//                        $score_check = Db::table('period')
+//                            ->where([
+//                                'term' => $term,
+//                                'user_id' => $item['user_id']
+//                            ])->find();
+//                        if (!$score_check){
+//                            $score = Db::table('period')
+//                                ->insert([
+//                                    'term' => $term,
+//                                    'user_id' => $item['user_id'],
+//                                    'period' => 0
+//                                ]);
+//                            if (!$score){
+//                                Db::rollback();
+//                                exit(json_encode([
+//                                    'code' => 504,
+//                                    'msg' => '更新出错，请重试！'
+//                                ]));
+//                            }
+//                        }else{
+//                            $score = Db::table('period')
+//                                ->where([
+//                                    'term' => $term,
+//                                    'user_id' => $item['user_id']
+//                                ])->update([
+//                                    'period' => ['exp','period+1']
+//                                ]);
+//                            if (!$score){
+//                                Db::rollback();
+//                                exit(json_encode([
+//                                    'code' => 504,
+//                                    'msg' => '更新出错，请重试！'
+//                                ]));
+//                            }
+//                        }
+//                        $all_score = Db::table('user')
+//                            ->where([
+//                                'id' => $item['user_id']
+//                            ])->update([
+//                                'period' => ['exp','period+1']
+//                            ]);
+//                        if (!$all_score){
+//                            Db::rollback();
+//                            exit(json_encode([
+//                                'code' => 504,
+//                                'msg' => '更新出错，请重试！'
+//                            ]));
+//                        }
+//                    }
+//                }
+//            }
+//            $rrr = Db::table('meeting_member')->where([
+//                'meeting_id' => $data['meeting_id']
+//            ])->delete();
+//            if (!$rrr){
+//                Db::rollback();
+//                exit(json_encode([
+//                    'code' => 504,
+//                    'msg' => '更新出错，请重试！'
+//                ]));
+//            }
+//        }
         if ($check){
-            foreach ($check as $item){
-                //出席
-                if ($item['attend'] == 1&& $item['sign_out'] == 1){
-                    $score_check = Db::table('period')
-                        ->where([
-                            'term' => $term,
-                            'user_id' => $item['user_id']
-                        ])->find();
-                    if (!$score_check){
-                        $score = Db::table('period')
-                            ->insert([
-                                'term' => $term,
-                                'user_id' => $item['user_id'],
-                                'period' => 0
-                            ]);
-                        if (!$score){
-                            Db::rollback();
-                            exit(json_encode([
-                                'code' => 504,
-                                'msg' => '更新出错，请重试！'
-                            ]));
-                        }
-                    }else{
-                        $score = Db::table('period')
-                            ->where([
-                                'term' => $term,
-                                'user_id' => $item['user_id']
-                            ])->update([
-                                'period' => ['exp','period-'.$meeting_period]
-                            ]);
-                        if (!$score){
-                            Db::rollback();
-                            exit(json_encode([
-                                'code' => 504,
-                                'msg' => '更新出错，请重试！'
-                            ]));
-                        }
-                    }
-
-                    $all_score = Db::table('user')
-                        ->where([
-                            'id' => $item['user_id']
-                        ])->update([
-                            'period' => ['exp','period-'.$meeting_period]
-                        ]);
-                    if (!$all_score){
-                        Db::rollback();
-                        exit(json_encode([
-                            'code' => 504,
-                            'msg' => '更新出错，请重试！'
-                        ]));
-                    }
-                }elseif(($item['attend'] == 1&& $item['sign_out'] == 0)||($item['attend'] == 0&& $item['sign_out'] == 1)){
-                    //早退或迟到
-                    if (count(Db::table('meeting_member')->where(['attend' => 1,'sign_out' => 0,'user_id' => $item['user_id']])->select()) >= 2
-                    || count(Db::table('meeting_member')->where(['attend' => 0,'sign_out' => 1,'user_id' => $item['user_id']])->select()) >= 2){
-                        $score_check = Db::table('period')
-                            ->where([
-                                'term' => $term,
-                                'user_id' => $item['user_id']
-                            ])->find();
-                        if (!$score_check){
-                            $score = Db::table('period')
-                                ->insert([
-                                    'term' => $term,
-                                    'user_id' => $item['user_id'],
-                                    'period' => 0
-                                ]);
-                            if (!$score){
-                                Db::rollback();
-                                exit(json_encode([
-                                    'code' => 504,
-                                    'msg' => '更新出错，请重试！'
-                                ]));
-                            }
-                        }else{
-                            $score = Db::table('period')
-                                ->where([
-                                    'term' => $term,
-                                    'user_id' => $item['user_id']
-                                ])->update([
-                                    'period' => ['exp','period+0.5']
-                                ]);
-                            if (!$score){
-                                Db::rollback();
-                                exit(json_encode([
-                                    'code' => 504,
-                                    'msg' => '更新出错，请重试！'
-                                ]));
-                            }
-                        }
-                        $all_score = Db::table('user')
-                            ->where([
-                                'id' => $item['user_id']
-                            ])->update([
-                                'period' => ['exp','period+0.5']
-                            ]);
-                        if (!$all_score){
-                            Db::rollback();
-                            exit(json_encode([
-                                'code' => 504,
-                                'msg' => '更新出错，请重试！'
-                            ]));
-                        }
-                    }
-                }else{
-                    if (count(Db::table('meeting_member')->where(['attend' => 0,'sign_out' => 0,'user_id' => $item['user_id']])->select()) >= 2){
-                        $score_check = Db::table('period')
-                            ->where([
-                                'term' => $term,
-                                'user_id' => $item['user_id']
-                            ])->find();
-                        if (!$score_check){
-                            $score = Db::table('period')
-                                ->insert([
-                                    'term' => $term,
-                                    'user_id' => $item['user_id'],
-                                    'period' => 0
-                                ]);
-                            if (!$score){
-                                Db::rollback();
-                                exit(json_encode([
-                                    'code' => 504,
-                                    'msg' => '更新出错，请重试！'
-                                ]));
-                            }
-                        }else{
-                            $score = Db::table('period')
-                                ->where([
-                                    'term' => $term,
-                                    'user_id' => $item['user_id']
-                                ])->update([
-                                    'period' => ['exp','period+1']
-                                ]);
-                            if (!$score){
-                                Db::rollback();
-                                exit(json_encode([
-                                    'code' => 504,
-                                    'msg' => '更新出错，请重试！'
-                                ]));
-                            }
-                        }
-                        $all_score = Db::table('user')
-                            ->where([
-                                'id' => $item['user_id']
-                            ])->update([
-                                'period' => ['exp','period+1']
-                            ]);
-                        if (!$all_score){
-                            Db::rollback();
-                            exit(json_encode([
-                                'code' => 504,
-                                'msg' => '更新出错，请重试！'
-                            ]));
-                        }
-                    }
-                }
-            }
-            $rrr = Db::table('meeting_member')->where([
+            $rr = Db::table('meeting_member')->where([
                 'meeting_id' => $data['meeting_id']
             ])->delete();
-            if (!$rrr){
+            if (!$rr){
                 Db::rollback();
                 exit(json_encode([
                     'code' => 504,
-                    'msg' => '更新出错，请重试！'
+                    'msg' => '更新出错，请重试！2'
                 ]));
             }
         }
         if ($check2){
             $rr = Db::table('meeting_major')->where([
-                'id' => $data['meeting_id']
+                'meeting_id' => $data['meeting_id']
             ])->delete();
             if (!$rr){
                 Db::rollback();
                 exit(json_encode([
                     'code' => 504,
-                    'msg' => '更新出错，请重试！'
+                    'msg' => '更新出错，请重试！3'
                 ]));
             }
         }
         if ($check3){
             $rr = Db::table('sign_list')->where([
-                'id' => $data['meeting_id']
+                'meeting_id' => $data['meeting_id']
             ])->delete();
             if (!$rr){
                 Db::rollback();
                 exit(json_encode([
                     'code' => 504,
-                    'msg' => '更新出错，请重试！'
+                    'msg' => '更新出错，请重试！4'
                 ]));
             }
         }
@@ -1551,6 +1687,18 @@ class Super extends BaseModel
                 'msg' => '无学期！'
             ]));
         }
+        if (!array_key_exists('major',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无学院！'
+            ]));
+        }
+        if (!array_key_exists('grade',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无年级！'
+            ]));
+        }
         //验证
         (new ShowMeeting())->goToCheck($data);
         $page = (int)$data['page'];
@@ -1579,21 +1727,75 @@ class Super extends BaseModel
                 'msg' => '传入学期没有全部的情况'
             ]));
         }
+        $major = $data['major'];
+        $grade = $data['grade'];
         if ($page == 0 && $size == 0){
             $i = 0;
             $r = [];
             $t = str_replace('-','',$data['term']);
-            $info = $user->field('id,username,major,number,period')
-                ->order([
-                    'number' => 'asc'
-                ])
-                ->select();
-            if (!$info){
-                exit(json_encode([
-                    'code' => 400,
-                    'msg' => '未查到用户'
-                ]));
+
+            if ($major == 'all'){
+                if ($grade == 'all'){
+                    $info = $user->field('id,username,major,number,period')
+                        ->order([
+                            'number' => 'asc'
+                        ])
+                        ->select();
+                    if (!$info){
+                        exit(json_encode([
+                            'code' => 400,
+                            'msg' => '未查到用户'
+                        ]));
+                    }
+                }else{
+                    $info = $user->field('id,username,major,number,period')
+                        ->where('number','like',$grade.'%')
+                        ->order([
+                            'number' => 'asc'
+                        ])
+                        ->select();
+                    if (!$info){
+                        exit(json_encode([
+                            'code' => 400,
+                            'msg' => '未查到用户'
+                        ]));
+                    }
+                }
+            }else{
+                if ($grade == 'all'){
+                    $info = $user->field('id,username,major,number,period')
+                        ->where([
+                            'major' => $major
+                        ])
+                        ->order([
+                            'number' => 'asc'
+                        ])
+                        ->select();
+                    if (!$info){
+                        exit(json_encode([
+                            'code' => 400,
+                            'msg' => '未查到用户'
+                        ]));
+                    }
+                }else{
+                    $info = $user->field('id,username,major,number,period')
+                        ->where([
+                            'major' => $major
+                        ])
+                        ->where('number','like',$grade.'%')
+                        ->order([
+                            'number' => 'asc'
+                        ])
+                        ->select();
+                    if (!$info){
+                        exit(json_encode([
+                            'code' => 400,
+                            'msg' => '未查到用户'
+                        ]));
+                    }
+                }
             }
+
             foreach ($info as $k){
                 $r[$i]['user_id'] = $k['id'];
                 $r[$i]['username'] = $k['username'];
@@ -1609,17 +1811,68 @@ class Super extends BaseModel
             $i = 0;
             if ($data['term'] != 'all'){
                 $t = str_replace('-','',$data['term']);
-                $info = $user->limit($start,$size)->field('id,username,major,number,period')
-                    ->order([
-                        'number' => 'asc'
-                    ])
-                    ->select();
-                if (!$info){
-                    exit(json_encode([
-                        'code' => 400,
-                        'msg' => '未查到用户'
-                    ]));
+                if ($major == 'all'){
+                    if ($grade == 'all'){
+                        $info = $user->limit($start,$size)->field('id,username,major,number,period')
+                            ->order([
+                                'number' => 'asc'
+                            ])
+                            ->select();
+                        if (!$info){
+                            exit(json_encode([
+                                'code' => 400,
+                                'msg' => '未查到用户'
+                            ]));
+                        }
+                    }else{
+                        $info = $user->limit($start,$size)->field('id,username,major,number,period')
+                            ->order([
+                                'number' => 'asc'
+                            ])
+                            ->where('number','like',$grade.'%')
+                            ->select();
+                        if (!$info){
+                            exit(json_encode([
+                                'code' => 400,
+                                'msg' => '未查到用户'
+                            ]));
+                        }
+                    }
+                }else{
+                    if ($grade == 'all'){
+                        $info = $user->limit($start,$size)->field('id,username,major,number,period')
+                            ->where([
+                                'major' => $major
+                            ])
+                            ->order([
+                                'number' => 'asc'
+                            ])
+                            ->select();
+                        if (!$info){
+                            exit(json_encode([
+                                'code' => 400,
+                                'msg' => '未查到用户'
+                            ]));
+                        }
+                    }else{
+                        $info = $user->limit($start,$size)->field('id,username,major,number,period')
+                            ->where([
+                                'major' => $major
+                            ])
+                            ->where('number','like',$grade.'%')
+                            ->order([
+                                'number' => 'asc'
+                            ])
+                            ->select();
+                        if (!$info){
+                            exit(json_encode([
+                                'code' => 400,
+                                'msg' => '未查到用户'
+                            ]));
+                        }
+                    }
                 }
+
                 foreach ($info as $k){
                     $r[$i]['user_id'] = $k['id'];
                     $r[$i]['username'] = $k['username'];
@@ -1651,51 +1904,12 @@ class Super extends BaseModel
         }
         $meeting = new Meeting();
         $user = new User();
-        if (!array_key_exists('meeting',$data)){
-            exit(json_encode([
-                'code' => 400,
-                'msg' => '修改状态的数组！'
-            ]));
-        }
-        if (!array_key_exists('user_id',$data)){
-            exit(json_encode([
-                'code' => 400,
-                'msg' => '无用户标识！'
-            ]));
-        }
-        $meet = $data['meeting'];
-        $rule = [
-            'user_id'  => 'require|number',
-        ];
-        $msg = [
-            'user_id.require' => '用户标识不能为空',
-            'user_id.number'   => '用户标识必须是数字',
-        ];
-        $validate = new Validate($rule,$msg);
-        $result   = $validate->check($data);
-        if(!$result){
-            exit(json_encode([
-                'code' => 400,
-                'msg' => $validate->getError()
-            ]));
-        }
-
-        //检查是否有用户
-        $re = $user->where([
-            'id' => $data['user_id']
-        ])->field('username')->find();
-        if (!$re){
-            exit(json_encode([
-                'code' => 400,
-                'msg' => '没有该用户！'
-            ]));
-        }
         Db::startTrans();
-        foreach ($meet as $vv){
+        foreach ($data as $vv){
             $rr = Db::table('meeting_member')->where([
                 'meeting_id' => $vv['meeting_id'],
-                'user_id' => $data['user_id']
-            ])->field('attend,ask_leave,sign_out')->find();
+                'user_id' => $vv['user_id']
+            ])->field('attend,sign_out')->find();
             if (!$rr){
                 Db::rollback();
                 exit(json_encode([
@@ -1708,28 +1922,10 @@ class Super extends BaseModel
                     //出席
                     $info = Db::table('meeting_member')->where([
                         'meeting_id' => $vv['meeting_id'],
-                        'user_id' => $data['user_id']
+                        'user_id' => $vv['user_id']
                     ])->update([
                         'attend' => 1,
                         'sign_out' => 1,
-                        'ask_leave' => 0,
-                    ]);
-                    if (!$info){
-                        Db::rollback();
-                        exit(json_encode([
-                            'code' => 504,
-                            'msg' => '更新出错，请重试！'
-                        ]));
-                    }
-                }
-            }elseif ($vv['status'] == '请假'){
-                if ($rr['ask_leave'] != 1){
-                    //请假
-                    $info = Db::table('meeting_member')->where([
-                        'meeting_id' => $vv['meeting_id'],
-                        'user_id' => $data['user_id']
-                    ])->update([
-                        'ask_leave' => 1
                     ]);
                     if (!$info){
                         Db::rollback();
@@ -1744,11 +1940,10 @@ class Super extends BaseModel
                     //缺席
                     $info = Db::table('meeting_member')->where([
                         'meeting_id' => $vv['meeting_id'],
-                        'user_id' => $data['user_id']
+                        'user_id' => $vv['user_id']
                     ])->update([
                         'attend' => 0,
                         'sign_out' => 0,
-                        'ask_leave' => 0
                     ]);
                     if (!$info){
                         Db::rollback();
@@ -1763,10 +1958,9 @@ class Super extends BaseModel
                     //迟到
                     $info = Db::table('meeting_member')->where([
                         'meeting_id' => $vv['meeting_id'],
-                        'user_id' => $data['user_id']
+                        'user_id' => $vv['user_id']
                     ])->update([
                         'attend' => 0,
-                        'ask_leave' => 0,
                         'sign_out' => 1
                     ]);
                     if (!$info){
@@ -1782,10 +1976,9 @@ class Super extends BaseModel
                     //早退
                     $info = Db::table('meeting_member')->where([
                         'meeting_id' => $vv['meeting_id'],
-                        'user_id' => $data['user_id']
+                        'user_id' => $vv['user_id']
                     ])->update([
                         'attend' => 1,
-                        'ask_leave' => 0,
                         'sign_out' => 0
                     ]);
                     if (!$info){
@@ -1812,14 +2005,14 @@ class Super extends BaseModel
         ]);
     }
 
-
-    public function change_single_state($data){
+    //修改已开始会议状态
+    public function change_start_single_state($data){
         $TokenModel = new Token();
         $id = $TokenModel->get_id();
         $secret = $TokenModel->checkUser();
-        if ($secret != 32){
+        if ((int)$secret < 31){
             exit(json_encode([
-                'code' => 403,
+                'code' => 400,
                 'msg' => '权限不足！'
             ]));
         }
@@ -1828,7 +2021,7 @@ class Super extends BaseModel
         if (!array_key_exists('meeting',$data)){
             exit(json_encode([
                 'code' => 400,
-                'msg' => '修改状态的数组！'
+                'msg' => '无meeting！'
             ]));
         }
         if (!array_key_exists('user_id',$data)){
@@ -1870,7 +2063,158 @@ class Super extends BaseModel
             $rr = Db::table('meeting_member')->where([
                 'meeting_id' => $meet,
                 'user_id' => $vv['user_id']
-            ])->field('attend,ask_leave,sign_out')->find();
+            ])->field('attend,sign_out')->find();
+            if (!$rr){
+                Db::rollback();
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '没有该用户成员！'
+                ]));
+            }
+            if ($vv['sign_in'] == '已签到'){
+                if ($rr['attend'] != 1){
+                    //出席
+                    $info = Db::table('meeting_member')->where([
+                        'meeting_id' => $meet,
+                        'user_id' => $vv['user_id']
+                    ])->update([
+                        'attend' => 1,
+                    ]);
+                    if (!$info){
+                        Db::rollback();
+                        exit(json_encode([
+                            'code' => 504,
+                            'msg' => '更新出错，请重试！'
+                        ]));
+                    }
+                }
+            }elseif ($vv['sign_in'] == '未签到'){
+                if ($rr['attend'] != 0){
+                    //缺席
+                    $info = Db::table('meeting_member')->where([
+                        'meeting_id' => $meet,
+                        'user_id' => $vv['user_id']
+                    ])->update([
+                        'attend' => 0,
+                    ]);
+                    if (!$info){
+                        Db::rollback();
+                        exit(json_encode([
+                            'code' => 504,
+                            'msg' => '更新出错，请重试！'
+                        ]));
+                    }
+                }
+            }
+            if ($vv['sign_out'] == '已签退'){
+                if ($rr['sign_out'] == 0){
+                    //迟到
+                    $info = Db::table('meeting_member')->where([
+                        'meeting_id' => $meet,
+                        'user_id' => $vv['user_id']
+                    ])->update([
+                        'sign_out' => 1
+                    ]);
+                    if (!$info){
+                        Db::rollback();
+                        exit(json_encode([
+                            'code' => 504,
+                            'msg' => '更新出错，请重试！'
+                        ]));
+                    }
+                }
+            }elseif ($vv['sign_out'] == '未签退'){
+                if ($rr['sign_out'] == 1){
+                    //早退
+                    $info = Db::table('meeting_member')->where([
+                        'meeting_id' => $meet,
+                        'user_id' => $vv['user_id']
+                    ])->update([
+                        'sign_out' => 0
+                    ]);
+                    if (!$info){
+                        Db::rollback();
+                        exit(json_encode([
+                            'code' => 504,
+                            'msg' => '更新出错，请重试！'
+                        ]));
+                    }
+                }
+            }else{
+                Db::rollback();
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '没有这种状态'
+                ]));
+            }
+        }
+        Db::commit();
+
+        return json([
+            'code' => 200,
+            'msg' => 'success'
+        ]);
+    }
+
+
+    public function change_single_state($data){
+        $TokenModel = new Token();
+        $id = $TokenModel->get_id();
+        $secret = $TokenModel->checkUser();
+        if ((int)$secret < 31){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '权限不足！'
+            ]));
+        }
+        $meeting = new Meeting();
+        $user = new User();
+        if (!array_key_exists('meeting',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无meeting！'
+            ]));
+        }
+        if (!array_key_exists('user_id',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无用户标识！'
+            ]));
+        }
+        $meet = $data['meeting'];
+        $usr = $data['user_id'];
+        $rule = [
+            'meeting'  => 'require|number',
+        ];
+        $msg = [
+            'meeting.require' => '会议标识不能为空',
+            'meeting.number'   => '会议标识必须是数字',
+        ];
+        $validate = new Validate($rule,$msg);
+        $result   = $validate->check($data);
+        if(!$result){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => $validate->getError()
+            ]));
+        }
+
+        //检查是否有用户
+        $re = $meeting->where([
+            'id' => $meet
+        ])->field('id')->find();
+        if (!$re){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '没有该会议！'
+            ]));
+        }
+        Db::startTrans();
+        foreach ($usr as $vv){
+            $rr = Db::table('meeting_member')->where([
+                'meeting_id' => $meet,
+                'user_id' => $vv['user_id']
+            ])->field('attend,sign_out')->find();
             if (!$rr){
                 Db::rollback();
                 exit(json_encode([
@@ -1886,7 +2230,6 @@ class Super extends BaseModel
                         'user_id' => $vv['user_id']
                     ])->update([
                         'attend' => 1,
-                        'ask_leave' => 0,
                         'sign_out' => 1
                     ]);
                     if (!$info){
@@ -1905,7 +2248,6 @@ class Super extends BaseModel
                         'user_id' => $vv['user_id']
                     ])->update([
                         'attend' => 0,
-                        'ask_leave' => 0,
                         'sign_out' => 0
                     ]);
                     if (!$info){
@@ -1924,7 +2266,6 @@ class Super extends BaseModel
                         'user_id' => $vv['user_id']
                     ])->update([
                         'attend' => 0,
-                        'ask_leave' => 0,
                         'sign_out' => 1
                     ]);
                     if (!$info){
@@ -1943,7 +2284,6 @@ class Super extends BaseModel
                         'user_id' => $vv['user_id']
                     ])->update([
                         'attend' => 1,
-                        'ask_leave' => 0,
                         'sign_out' => 0
                     ]);
                     if (!$info){
@@ -2654,7 +2994,7 @@ class Super extends BaseModel
         $TokenModel = new Token();
         $id = $TokenModel->get_id();
         $secret = $TokenModel->checkUser();
-        if ($secret != 32){
+        if ((int)$secret < 30){
             exit(json_encode([
                 'code' => 403,
                 'msg' => '权限不足！'
@@ -2895,7 +3235,7 @@ class Super extends BaseModel
         ]);
     }
 
-    public function in($file='', $sheet=0){
+    public function in($file='', $sheet=0,$username_colum = 0,$number_colum = 1,$major_colum = 2){
         $file = iconv("utf-8", "gb2312", $file);   //转码
         if(empty($file) OR !file_exists($file)) {
             die('file not exists!');
@@ -2921,28 +3261,33 @@ class Super extends BaseModel
             for($_column=0; $_column<$columnCnt; $_column++){
                 $cellId = $cellName[$_column].$_row;
                 $cellValue = $currSheet->getCell($cellId)->getValue();
-                if ($_column == 0){
+                if ($_column == $username_colum){
                     $cellValue1=preg_replace("/[\r\n\s]/","",$cellValue);
-                }elseif ($_column == 1){
+                }elseif ($_column == $number_colum){
                     $cellValue2=preg_replace("/[\r\n\s]/","",$cellValue);
-                }elseif ($_column == 2){
+                }elseif ($_column == $major_colum){
                     $cellValue3=preg_replace("/[\r\n\s]/","",$cellValue);
                 }
             }
-            $result = Db::table('user')
-                ->insert([
-                    'username' => $cellValue1,
-                    'password' => '09951fc3343c63973369b91bdc8e441a',
-                    'number' => $cellValue2,
-                    'major' => $cellValue3
-                ]);
 
-            if (!$result){
-                Db::rollback();
-                exit(json_encode([
-                    'code' => 400,
-                    'msg' => '出错了'
-                ]));
+//            var_dump("名字：".$cellValue1."学号：".$cellValue2."学院：".$cellValue3."<br>");
+
+            if (!Db::table('user')->where(['username'=>$cellValue1,'number' => $cellValue2,'major' => $cellValue3])->find()){
+                $result = Db::table('user')
+                    ->insert([
+                        'username' => $cellValue1,
+                        'password' => '09951fc3343c63973369b91bdc8e441a',
+                        'number' => $cellValue2,
+                        'major' => $cellValue3
+                    ]);
+
+                if (!$result){
+                    Db::rollback();
+                    exit(json_encode([
+                        'code' => 400,
+                        'msg' => '出错了'
+                    ]));
+                }
             }
         }
         Db::commit();
@@ -3183,7 +3528,7 @@ class Super extends BaseModel
         $TokenModel = new Token();
         $id = $TokenModel->get_id();
         $secret = $TokenModel->checkUser();
-        if ($secret != 32){
+        if ((int)$secret < 30){
             exit(json_encode([
                 'code' => 403,
                 'msg' => '权限不足！'
@@ -3209,13 +3554,13 @@ class Super extends BaseModel
             ]);
         }
 
-        $end_time = $meeting['end_time'];
-        $time = (int)time();
-        if ($time <= $end_time){
-            throw new BaseException([
-                'msg' => '会议还未结束，不能看成员的出勤情况'
-            ]);
-        }
+//        $end_time = $meeting['end_time'];
+//        $time = (int)time();
+//        if ($time <= $end_time){
+//            throw new BaseException([
+//                'msg' => '会议还未结束，不能看成员的出勤情况'
+//            ]);
+//        }
         $meeting_name = $meeting['name'];
         $term = $meeting['term'];
 
@@ -3267,7 +3612,7 @@ class Super extends BaseModel
         $TokenModel = new Token();
         $id = $TokenModel->get_id();
         $secret = $TokenModel->checkUser();
-        if ($secret != 32){
+        if ((int)$secret < 30){
             exit(json_encode([
                 'code' => 403,
                 'msg' => '权限不足！'
@@ -3432,7 +3777,7 @@ class Super extends BaseModel
         $TokenModel = new Token();
         $id = $TokenModel->get_id();
         $secret = $TokenModel->checkUser();
-        if ($secret != 32){
+        if ((int)$secret < 31){
             exit(json_encode([
                 'code' => 403,
                 'msg' => '权限不足！'
@@ -3590,7 +3935,7 @@ class Super extends BaseModel
         $TokenModel = new Token();
         $id = $TokenModel->get_id();
         $secret = $TokenModel->checkUser();
-        if ($secret != 32){
+        if ((int)$secret < 31){
             exit(json_encode([
                 'code' => 403,
                 'msg' => '权限不足！'
@@ -3730,7 +4075,7 @@ class Super extends BaseModel
         $TokenModel = new Token();
         $id = $TokenModel->get_id();
         $secret = $TokenModel->checkUser();
-        if ($secret != 32){
+        if ((int)$secret < 31){
             exit(json_encode([
                 'code' => 403,
                 'msg' => '权限不足！'
@@ -4139,7 +4484,7 @@ class Super extends BaseModel
         $TokenModel = new Token();
         $id = $TokenModel->get_id();
         $secret = $TokenModel->checkUser();
-        if ($secret != 32){
+        if ((int)$secret < 31){
             exit(json_encode([
                 'code' => 403,
                 'msg' => '权限不足！'
@@ -4248,9 +4593,9 @@ class Super extends BaseModel
             ]));
         }
         $end_time = $date1.'-'.$date2.'-'.$date3.' '.$end_time.':00';
-        $end_time = strtotime($end_time);
+        $end_time = (int)strtotime($end_time)+1200;
         $begin_time = $date1.'-'.$date2.'-'.$date3.' '.$time1.':'.$time2.':00';
-        $begin_time = strtotime($begin_time);
+        $begin_time = (int)strtotime($begin_time)-1200;
         $enter_begin = strtotime($enter_begin);
         $enter_end = strtotime($enter_end);
 
@@ -4279,7 +4624,8 @@ class Super extends BaseModel
                 'description' => $description,
                 'enter_end' => $enter_end,
                 'period' => $period,
-                're_end_time' => $re
+                're_end_time' => $re,
+                'publish_id' => $id
             ]);
             if (!$result){
                 Db::rollback();
@@ -4320,7 +4666,8 @@ class Super extends BaseModel
                 'description' => $description,
                 'enter_end' => $enter_end,
                 'period' => $period,
-                're_end_time' => $re
+                're_end_time' => $re,
+                'publish_id' => $id
             ]);
             if (!$result){
                 Db::rollback();
@@ -4428,14 +4775,14 @@ class Super extends BaseModel
                 'msg' => '无页大小！'
             ]));
         }
-        if (!array_key_exists('term',$data)){
+        if (!array_key_exists('major',$data)){
             exit(json_encode([
                 'code' => 400,
                 'msg' => '无排序规则！'
             ]));
         }
         //验证
-        (new ShowMeeting())->goToCheck($data);
+        (new ShowCheckMeeting())->goToCheck($data);
 
         //page从1开始
         //limit($page*$size-1,$size)   0除外
@@ -4460,18 +4807,19 @@ class Super extends BaseModel
             ]));
         }
 
-        $term = $data['term'];
+        $major = $data['major'];
 
         //查询
         // 1  2  3
         // 0  2  5
         $meeting = new Check_meeting();
-        if ($term == 'all'){
+        if ($major == 'all'){
             if ($page == 0 && $size == 0){
                 $info = $meeting
                     ->order([
                         'term' => 'desc'
                     ])
+                    ->where(['state' => 0])
                     ->select();
             }else{
                 $start = ($page-1)*$size;
@@ -4479,27 +4827,30 @@ class Super extends BaseModel
                     ->order([
                         'term' => 'desc'
                     ])
+                    ->where(['state' => 0])
                     ->select();
             }
             $msg = [];
             foreach ($info as $k => $v){
                 $t = $v['term1'].'-'.$v['term2'].'-'.$v['term3'];
-                if (!array_key_exists($t,$msg)) $i = 0;
-                else $i = count($msg[$t]);
-                $msg[$t][$i]['meeting_id'] = $v['id'];
-                $msg[$t][$i]['name'] = $v['name'];
-                $msg[$t][$i]['time'] = $v['date1'].'/'.$v['date2'].'/'.$v['date3'];
-                $msg[$t][$i]['clock'] = $v['time1'].':'.$v['time2'].'-'.$v['re_end_time'];
-                $msg[$t][$i]['position'] = $v['position'];
-                $msg[$t][$i]['period'] = $v['period'];
-                $msg[$t][$i]['photo'] = config('setting.image_root').$v['photo'];
+                $major = $v['department'];
+                if (!array_key_exists($major,$msg)) $i = 0;
+                else $i = count($msg[$major]);
+                $msg[$major][$i]['meeting_id'] = $v['id'];
+                $msg[$major][$i]['name'] = $v['name'];
+                $msg[$major][$i]['time'] = $v['date1'].'/'.$v['date2'].'/'.$v['date3'];
+                $msg[$major][$i]['clock'] = $v['time1'].':'.$v['time2'].'-'.$v['re_end_time'];
+                $msg[$major][$i]['position'] = $v['position'];
+                $msg[$major][$i]['period'] = $v['period'];
+                $msg[$major][$i]['term'] = $t;
+                $msg[$major][$i]['photo'] = config('setting.image_root').$v['photo'];
             }
         }else{
-            $t = str_replace('-','',$term);
             if ($page == 0 && $size == 0){
                 $info = $meeting
                     ->where([
-                        'term' => (int)$t
+                        'department' => $major,
+                        'state' => 0
                     ])
                     ->order([
                         'term' => 'desc'
@@ -4509,7 +4860,8 @@ class Super extends BaseModel
                 $start = ($page-1)*$size;
                 $info = $meeting->limit($start,$size)
                     ->where([
-                        'term' => (int)$t
+                        'department' => $major,
+                        'state' => 0
                     ])
                     ->order([
                         'term' => 'desc'
@@ -4524,17 +4876,19 @@ class Super extends BaseModel
             }
             //新开一个数组存放返回的东西
             $msg = [];
-            $i = 0;
             foreach ($info as $k => $v){
-                $msg[$term][$i]['meeting_id'] = $v['id'];
-                $msg[$term][$i]['name'] = $v['name'];
-                $msg[$term][$i]['time'] = $v['date1'].'/'.$v['date2'].'/'.$v['date3'];
-                $msg[$term][$i]['clock'] = $v['time1'].':'.$v['time2'].'-'.$v['re_end_time'];
-                $msg[$t][$i]['position'] = $v['position'];
-                $msg[$t][$i]['period'] = $v['period'];
-                $msg[$t][$i]['photo'] = config('setting.image_root').$v['photo'];
-
-                $i++;
+                $t = $v['term1'].'-'.$v['term2'].'-'.$v['term3'];
+                $major = $v['department'];
+                if (!array_key_exists($major,$msg)) $i = 0;
+                else $i = count($msg[$major]);
+                $msg[$major][$i]['meeting_id'] = $v['id'];
+                $msg[$major][$i]['name'] = $v['name'];
+                $msg[$major][$i]['time'] = $v['date1'].'/'.$v['date2'].'/'.$v['date3'];
+                $msg[$major][$i]['clock'] = $v['time1'].':'.$v['time2'].'-'.$v['re_end_time'];
+                $msg[$major][$i]['position'] = $v['position'];
+                $msg[$major][$i]['period'] = $v['period'];
+                $msg[$major][$i]['term'] = $t;
+                $msg[$major][$i]['photo'] = config('setting.image_root').$v['photo'];
             }
         }
 
@@ -4545,6 +4899,813 @@ class Super extends BaseModel
     }
 
 
+    public function show_check_term(){
+        $TokenModel = new Token();
+        $id = $TokenModel->get_id();
+        $secret = $TokenModel->checkUser();
+        if ((int)$secret < 30){
+            exit(json_encode([
+                'code' => 403,
+                'msg' => '权限不足！'
+            ]));
+        }
+
+        $meeting = new Check_meeting();
+        //查学期
+        $result = $meeting->distinct(true)->field('department')->select();
+        $i = 0;
+        $arr = [];
+        foreach ($result as $v){
+            $arr[$i] = $v['department'];
+            $i++;
+        }
+        return json([
+            'code' => 200,
+            'msg' => $arr
+        ]);
+    }
+
+    //显示单个会议
+    public function show_single_check_meeting($data){
+        $TokenModel = new Token();
+        $id = $TokenModel->get_id();
+        $secret = $TokenModel->checkUser();
+        if ((int)$secret < 30){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '权限不足！'
+            ]));
+        }
+        if (!array_key_exists('id',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '未传入会议标识！'
+            ]));
+        }
+        (new IDMustBeNumber())->goToCheck($data);
+
+        $id = $data['id'];
+
+        $meeting = new Check_meeting();
+        //查询
+        $result = $meeting->where([
+            'id' => $id
+        ])->find();
+        if (!$result){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '或许是id不正确，查找出错！'
+            ]));
+        }
+        $name = $result['name'];
+        $date1 = $result['date1'];
+        $date2 = $result['date2'];
+        $date3 = $result['date3'];
+        $time1 = $result['time1'];
+        $time2 = $result['time2'];
+        $position= $result['position'];
+        $term1= $result['term1'];
+        $term2= $result['term2'];
+        $term3= $result['term3'];
+        $department = $result['department'];
+        $description = $result['description'];
+        $type = $result['type'];
+        $period = $result['period'];
+        $photo = $result['photo'];
+        $re_end_time = $result['re_end_time'];
+        $end_time1 = $re_end_time[0].$re_end_time[1];
+        $end_time2 = $re_end_time[3].$re_end_time[4];
+        $enter_stare = date('Y-m-d-H:i',$result['enter_begin']);
+        $enter_end = date('Y-m-d-H:i',$result['enter_end']);
+        $publish_id = $result['publish_id'];
+
+        $teach = Db::table('super')
+            ->where([
+                'id' => $publish_id
+            ])->find();
+        $teacher = $teach['nickname'];
+
+        //截取当前状态
+        if ($result['state'] == 0){
+            $state = '待审核';
+        }else{
+            $state = '未通过';
+        }
+
+
+        $member = [];
+        $info = Db::table('check_major')->where([
+            'meeting_id' => $id
+        ])->select();
+        if ($info){
+            foreach ($info as $v){
+                if (array_key_exists($v['major'],$member)){
+                    $m = count($member[$v['major']]);
+                }else{
+                    $m = 0;
+                }
+                $member[$v['major']][$m] = $v['year'];
+            }
+        }
+
+        return json([
+            'code' => 200,
+            'msg' => [
+                'meeting_id' => $id,
+                'name' => $name,
+                'date1' => $date1,
+                'date2' => $date2,
+                'date3' => $date3,
+                'time1' => $time1,
+                'time2' => $time2,
+                'position' => $position,
+                'term1' => $term1,
+                'term2' => $term2,
+                'term3' => $term3,
+                'state' => $state,
+                'end_time1' => $end_time1,
+                'end_time2' => $end_time2,
+                'type' => $type,
+                'description' => $description,
+                'department' => $department,
+                'period' => $period,
+                'photo' => config('setting.image_root').$photo,
+                'member' => $member,
+                'enter_begin' => $enter_stare,
+                'enter_end' => $enter_end,
+                'teacher' => $teacher
+            ]
+        ]);
+    }
+
+    //同意审核
+    public function agree_apply($data){
+        $TokenModel = new Token();
+        $id = $TokenModel->get_id();
+        $secret = $TokenModel->checkUser();
+        if ((int)$secret < 32){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '权限不足！'
+            ]));
+        }
+        if (!array_key_exists('id',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '未传入审核会议标识！'
+            ]));
+        }
+        (new IDMustBeNumber())->goToCheck($data);
+
+        $meeting_id = $data['id'];
+        $meeting = new Check_meeting();
+        //查询
+        $result = $meeting->where([
+            'id' => $meeting_id
+        ])->find();
+        if (!$result){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '或许是id不正确，查找出错！'
+            ]));
+        }
+
+        $major_result = Db::table('check_major')
+            ->where([
+                'meeting_id' => $meeting_id
+            ])->select();
+
+        Db::startTrans();
+
+        //插入正式会议的表
+        $insert = Db::table('meeting')->insertGetId([
+            'name' => $result['name'],
+            'date1' => $result['date1'],
+            'date2' => $result['date2'],
+            'date3' => $result['date3'],
+            'time1' => $result['time1'],
+            'time2' => $result['time2'],
+            'position' => $result['position'],
+            'term1' => $result['term1'],
+            'term2' => $result['term2'],
+            'term3' => $result['term3'],
+            'term' => $result['term'],
+            'begin' => $result['begin'],
+            'end_time' => $result['end_time'],
+            'photo' => $result['photo'],
+            'type' => $result['type'],
+            'department' => $result['department'],
+            'enter_begin' => $result['enter_begin'],
+            'description' => $result['description'],
+            'enter_end' => $result['enter_end'],
+            'period' => $result['period'],
+            're_end_time' => $result['re_end_time'],
+            'publish_id' => $result['publish_id']
+        ]);
+        if (!$insert){
+            Db::rollback();
+            exit(json_encode([
+                'code' => 503,
+                'msg' => '更新出错！'
+            ]));
+        }
+
+        foreach ($major_result as $item){
+            $major = Db::table('meeting_major')
+                ->insert([
+                    'meeting_id' => $insert,
+                    'major' => $item['major'],
+                    'year' => $item['year'],
+                ]);
+            if (!$major){
+                Db::rollback();
+                exit(json_encode([
+                    'code' => 503,
+                    'msg' => '更新出错！'
+                ]));
+            }
+        }
+        if ($major_result){
+            $major_delete = Db::table('check_major')->where(['meeting_id' => $meeting_id])->delete();
+            if (!$major_delete){
+                Db::rollback();
+                exit(json_encode([
+                    'code' => 503,
+                    'msg' => '更新出错！'
+                ]));
+            }
+        }
+        $meeting_delete = Db::table('check_meeting')->where(['id' => $meeting_id])->delete();
+        if (!$meeting_delete){
+            Db::rollback();
+            exit(json_encode([
+                'code' => 503,
+                'msg' => '更新出错！'
+            ]));
+        }
+        Db::commit();
+
+        return json([
+            'code' => 200,
+            'msg' => 'success'
+        ]);
+    }
+
+    //不同意审核
+    public function disagree_apply($data){
+        $TokenModel = new Token();
+        $id = $TokenModel->get_id();
+        $secret = $TokenModel->checkUser();
+        if ((int)$secret < 32){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '权限不足！'
+            ]));
+        }
+        if (!array_key_exists('id',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '未传入审核会议标识！'
+            ]));
+        }
+        (new IDMustBeNumber())->goToCheck($data);
+
+        $meeting_id = $data['id'];
+        $meeting = new Check_meeting();
+        //查询
+        $result = $meeting->where([
+            'id' => $meeting_id
+        ])->find();
+        if (!$result){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '或许是id不正确，查找出错！'
+            ]));
+        }
+        if ($result['state'] == 0){
+            $update_result = Db::table('check_meeting')->where(['id' => $meeting_id])->update(['state' => 1]);
+            if (!$update_result) {
+                exit(json_encode([
+                    'code' => 503,
+                    'msg' => '更新出错！'
+                ]));
+            }
+        }
+
+        return json([
+            'code' => 200,
+            'msg' => 'success'
+        ]);
+    }
+
+    //修改审核会议
+    public function change_check_meeting($data){
+        $TokenModel = new Token();
+        $id = $TokenModel->get_id();
+        $secret = $TokenModel->checkUser();
+        if ((int)$secret < 31){
+            exit(json_encode([
+                'code' => 403,
+                'msg' => '权限不足！'
+            ]));
+        }
+
+        if (!array_key_exists('meeting_id',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无会议标识！'
+            ]));
+        }
+
+        if (!array_key_exists('name',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无会议名称！'
+            ]));
+        }
+        if (!array_key_exists('date1',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无日期！(第一空)！'
+            ]));
+        }
+        if (!array_key_exists('date2',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无日期！（第二空）'
+            ]));
+        }
+        if (!array_key_exists('date3',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无日期！（第三空）'
+            ]));
+        }
+        if (!array_key_exists('time1',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无时间！(第一空)'
+            ]));
+        }
+        if (!array_key_exists('time2',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无时间！(第二空)'
+            ]));
+        }
+        if (!array_key_exists('position',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无地点！'
+            ]));
+        }
+        if (!array_key_exists('term1',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无学期！(第一空)'
+            ]));
+        }
+        if (!array_key_exists('term2',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无学期！(第二空)'
+            ]));
+        }
+        if (!array_key_exists('term3',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无学期！(第三空)'
+            ]));
+        }
+        if(!is_numeric($data['meeting_id'])){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '会议标识非数字'
+            ]));
+        }
+        $this->have_key_validate([
+            'meeting_type' => '无会议类型！',
+            'department' => '无开课部门！',
+            'enter_begin' => '无报名开始时间！',
+            'enter_end' => '无报名结束时间！',
+            'description' => '无内容简介！',
+            'end_time' => '无会议结束时间！',
+            'member' => '无可选学院年级！'
+        ],$data);
+        (new SetMeeting())->goToCheck($data);
+        //过滤
+        $name = filter($data['name']);
+        $date1 = filter($data['date1']);
+        $date2 = filter($data['date2']);
+        $date3 = filter($data['date3']);
+        $time1 = filter($data['time1']);
+        $time2 = filter($data['time2']);
+        $position= filter($data['position']);
+        $term1= filter($data['term1']);
+        $term2= filter($data['term2']);
+        $term3= filter($data['term3']);
+        $type = $data['meeting_type'];
+        $department = $data['department'];
+        $enter_begin = $data['enter_begin'];
+        $enter_begin[10] = ' ';
+        $enter_begin[13] = ':';
+        $enter_end = $data['enter_end'];
+        $enter_end[10] = ' ';
+        $enter_end[13] = ':';
+        $description = $data['description'];
+        $period = $data['period'];
+        $end_time = $data['end_time'];
+        $re = $data['end_time'];
+        $member = $data['member'];
+
+        if (!((int)$date1<=(int)$term2&&(int)$date1>=(int)$term1)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '输入日期中的年份未在输入的学期之间，请检查后重新输入！'
+            ]));
+        }
+        $end_time = $date1.'-'.$date2.'-'.$date3.' '.$end_time.':00';
+        $end_time = (int)strtotime($end_time)+1200;
+        $begin_time = $date1.'-'.$date2.'-'.$date3.' '.$time1.':'.$time2.':00';
+        $begin_time = (int)strtotime($begin_time)-1200;
+        $enter_begin = strtotime($enter_begin);
+        $enter_end = strtotime($enter_end);
+        //入库
+        $meeting = new Check_meeting();
+        $check = $meeting->where([
+            'id' => $data['meeting_id']
+        ])->find();
+        if(!$check){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '该会议不存在'
+            ]));
+        }
+
+        //上传图片
+        $url = '';
+        $photo = Request::instance()->file('photo');
+        Db::startTrans();
+        if ($photo){
+            //给定一个目录
+            $info = $photo->validate(['ext'=>'jpg,jpeg,png,bmp,gif'])->move('upload');
+            if ($info && $info->getPathname()) {
+                $url .= $info->getPathname();
+            } else {
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '请检验上传图片格式（jpg,jpeg,png,bmp,gif）！'
+                ]));
+            }
+            if ($name==$check['name']&&$date1==$check['date1']&&$date2==$check['date2']&&$date3==$check['date3']&&$time1==$check['time1']
+                &&$time2==$check['time2']&&$position==$check['position']&&$term1==$check['term1']&&$term2==$check['term2']&&$term3==$check['term3']
+                &&$begin_time==$check['begin']&&$end_time==$check['end_time']&&$check['type'] == $type&&$check['department'] == $department&&$check['enter_begin'] = $enter_begin
+                    &&$enter_end ==$check['enter_end']&&$check['description']==$description&&$check['period']==$period&&$check['photo']==$url){
+            }else{
+                $result = Db::table('check_meeting')
+                    ->where([
+                        'id' => $data['meeting_id']
+                    ])
+                    ->update([
+                        'name' => $name,
+                        'date1' => $date1,
+                        'date2' => $date2,
+                        'date3' => $date3,
+                        'time1' => $time1,
+                        'time2' => $time2,
+                        'position' => $position,
+                        'term1' => $term1,
+                        'term2' => $term2,
+                        'term3' => $term3,
+                        'term' => (int)($term1.$term2.$term3),
+                        'begin' => $begin_time,
+                        'end_time' => $end_time,
+                        'photo' => $url,
+                        'type' => $type,
+                        'department' => $department,
+                        'enter_begin' => $enter_begin,
+                        'description' => $description,
+                        'enter_end' => $enter_end,
+                        'period' => $period,
+                        're_end_time' => $re,
+                        'state' => 0
+                    ]);
+                if (!$result){
+                    Db::rollback();
+                    exit(json_encode([
+                        'code' => 503,
+                        'msg' => '上传错误'
+                    ]));
+                }
+            }
+        }else{
+            if ($name==$check['name']&&$date1==$check['date1']&&$date2==$check['date2']&&$date3==$check['date3']&&$time1==$check['time1']
+                &&$time2==$check['time2']&&$position==$check['position']&&$term1==$check['term1']&&$term2==$check['term2']&&$term3==$check['term3']
+                &&$begin_time==$check['begin']&&$end_time==$check['end_time']&&$check['type'] == $type&&$check['department'] == $department&&$check['enter_begin'] = $enter_begin
+                    &&$enter_end ==$check['enter_end']&&$check['description']==$description&&$check['period']==$period){
+            }else{
+                $result = Db::table('check_meeting')
+                    ->where([
+                        'id' => $data['meeting_id']
+                    ])
+                    ->update([
+                        'name' => $name,
+                        'date1' => $date1,
+                        'date2' => $date2,
+                        'date3' => $date3,
+                        'time1' => $time1,
+                        'time2' => $time2,
+                        'position' => $position,
+                        'term1' => $term1,
+                        'term2' => $term2,
+                        'term3' => $term3,
+                        'term' => (int)($term1.$term2.$term3),
+                        'begin' => $begin_time,
+                        'end_time' => $end_time,
+                        'type' => $type,
+                        'department' => $department,
+                        'enter_begin' => $enter_begin,
+                        'description' => $description,
+                        'enter_end' => $enter_end,
+                        'period' => $period,
+                        're_end_time' => $re,
+                        'state' => 0
+                    ]);
+                if (!$result){
+                    Db::rollback();
+                    exit(json_encode([
+                        'code' => 503,
+                        'msg' => '上传错误'
+                    ]));
+                }
+            }
+        }
+
+        //修改可选学院
+        $meeting_major = Db::table('check_major')->where([
+            'meeting_id' => $data['meeting_id']
+        ])->delete();
+
+        if (!$meeting_major){
+            Db::rollback();
+            exit(json_encode([
+                'code' => 503,
+                'msg' => '更新学院出错'
+            ]));
+        }
+
+        foreach ($member as $k => $item){
+            $major = $k;
+            foreach ($item as $i){
+                $i = (array)$i;
+                $in = Db::table('check_major')
+                    ->insert([
+                        'meeting_id' => $data['meeting_id'],
+                        'major' => $major,
+                        'year' => $i['year']
+                    ]);
+                if (!$in){
+                    Db::rollback();
+                    exit(json_encode([
+                        'code' => 503,
+                        'msg' => '发布失败！'
+                    ]));
+                }
+            }
+        }
+
+        Db::commit();
+
+        return json([
+            'code' => 200,
+            'msg' => 'success'
+        ]);
+    }
+
+    //删除带审核会议
+    public function delete_check_meeting($data){
+        $TokenModel = new Token();
+        $id = $TokenModel->get_id();
+        $secret = $TokenModel->checkUser();
+        if ($secret < 31){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '权限不足！'
+            ]));
+        }
+        if (!array_key_exists('meeting_id',$data)){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '无会议标识！'
+            ]));
+        }
+        $rule = [
+            'meeting_id'  => 'require|number',
+        ];
+        $msg = [
+            'meeting_id.require' => '会议标识不能为空',
+            'meeting_id.number'   => '会议标识必须是数字',
+        ];
+        $validate = new Validate($rule,$msg);
+        $result   = $validate->check($data);
+        if(!$result){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => $validate->getError()
+            ]));
+        }
+        //查看这个会议有没有成员
+        $check2 = Db::table('check_major')->where([
+            'meeting_id' => $data['meeting_id']
+        ])->find();
+
+        $check4 = Db::table('check_meeting')
+            ->where([
+                'id' => $data['meeting_id']
+            ])->find();
+
+        if(!$check4){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '未找到该会议'
+            ]));
+        }
+        $publish_id = $check4['publish_id'];
+        if ($secret == 31){
+            if ($publish_id != $id){
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '权限不足！不能删除别人发布的会议'
+                ]));
+            }
+        }
+
+
+        //开启事务
+        Db::startTrans();
+        if ($check4){
+            $rr = Db::table('check_meeting')->where([
+                'id' => $data['meeting_id']
+            ])->delete();
+            if (!$rr){
+                Db::rollback();
+                exit(json_encode([
+                    'code' => 504,
+                    'msg' => '更新出错，请重试！1'
+                ]));
+            }
+        }
+
+        if ($check2){
+            $rr = Db::table('check_major')->where([
+                'meeting_id' => $data['meeting_id']
+            ])->delete();
+            if (!$rr){
+                Db::rollback();
+                exit(json_encode([
+                    'code' => 504,
+                    'msg' => '更新出错，请重试！3'
+                ]));
+            }
+        }
+        Db::commit();
+        return json([
+            'code' => 200,
+            'msg' => 'success'
+        ]);
+    }
+
+    //删除用户
+    public function delete_user($data){
+        $TokenModel = new Token();
+        $id = $TokenModel->get_id();
+        $secret = $TokenModel->checkUser();
+        if ($secret < 31){
+            exit(json_encode([
+                'code' => 400,
+                'msg' => '权限不足！'
+            ]));
+        }
+
+        foreach ($data as $item){
+            $check1 = Db::table('user')->where([
+                'id' => $item['user_id']
+            ])->find();
+            if (!$check1){
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '未找到该用户！'
+                ]));
+            }
+
+            $check2 = Db::table('sign_list')
+                ->where([
+                    'user_id' => $item['user_id']
+                ])->find();
+
+            $check3 = Db::table('meeting_member')
+                ->where([
+                    'user_id' => $item['user_id']
+                ])->find();
+
+            $check4 = Db::table('period')
+                ->where([
+                    'user_id' => $item['user_id']
+                ])->find();
+
+
+            //开启事务
+            Db::startTrans();
+            if ($check1){
+                $rr = Db::table('user')->where([
+                    'id' => $item['user_id']
+                ])->delete();
+                if (!$rr){
+                    Db::rollback();
+                    exit(json_encode([
+                        'code' => 504,
+                        'msg' => '更新出错，请重试！1'
+                    ]));
+                }
+            }
+
+            if ($check2){
+                $rr = Db::table('sign_list')->where([
+                    'user_id' => $item['user_id']
+                ])->delete();
+                if (!$rr){
+                    Db::rollback();
+                    exit(json_encode([
+                        'code' => 504,
+                        'msg' => '更新出错，请重试！2'
+                    ]));
+                }
+            }
+
+            if ($check3){
+                $rr = Db::table('meeting_member')->where([
+                    'user_id' => $item['user_id']
+                ])->delete();
+                if (!$rr){
+                    Db::rollback();
+                    exit(json_encode([
+                        'code' => 504,
+                        'msg' => '更新出错，请重试！4'
+                    ]));
+                }
+            }
+            if ($check4){
+                $rr = Db::table('period')->where([
+                    'user_id' => $item['user_id']
+                ])->delete();
+                if (!$rr){
+                    Db::rollback();
+                    exit(json_encode([
+                        'code' => 504,
+                        'msg' => '更新出错，请重试！4'
+                    ]));
+                }
+            }
+            Db::commit();
+        }
+
+        return json([
+            'code' => 200,
+            'msg' => 'success'
+        ]);
+    }
+
+    public function return_grade(){
+            $TokenModel = new Token();
+            $id = $TokenModel->get_id();
+            $secret = $TokenModel->checkUser();
+            if ((int)$secret < 30){
+                exit(json_encode([
+                    'code' => 403,
+                    'msg' => '权限不足！'
+                ]));
+            }
+
+            //查学期
+            $result = Db::table('user')->field('number')->select();
+            $i = 0;
+            $arr = [];
+            foreach ($result as $v){
+                $arr[$i] = substr($v['number'],0,4);
+                $i++;
+            }
+            $a = array_unique($arr);
+            $i = 0;
+            $b = [];
+            foreach ($a as $item) {
+                $b[$i] = $item;
+                $i++;
+            }
+            return json([
+                'code' => 200,
+                'msg' => $b
+            ]);
+    }
 
     public function show_attend(){
 

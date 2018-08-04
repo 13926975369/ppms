@@ -273,6 +273,60 @@ class Index extends Collection
                     'token' => $tk
                 ]
             ]);
+        }elseif ($type == 'B045'){
+            //小程序端管理员登录
+            //登录
+            //验证是否有传参
+            $user->wx_admin_login_exist($token,$data);
+            //验证传参的格式是否正确(白名单)
+            (new LoginValidate())->goToCheck($data);
+            //校验
+            $username = $data['username'];
+            $password = $data['password'];
+            //查用户
+            $exist_user = $Super->where([
+                'admin' => $username,
+            ])->find();
+            if (!$exist_user){
+                exit(json_encode([
+                    'code' => 404,
+                    'msg' => '用户不存在！'
+                ]));
+            }
+            $is_exist = $Super->where([
+                'admin' => $username,
+                'psw' => md5('Quanta'.$password)
+            ])->field('id,scope')->find();
+            if (!$is_exist){
+                exit(json_encode([
+                    'code' => 405,
+                    'msg' => '密码错误！'
+                ]));
+            }
+            //查id
+            $id = $is_exist['id'];
+
+            //获得token
+            $tk = $admin_token->wx_grantToken($id,$is_exist['scope'],$data['code']);
+            if ($is_exist['scope'] == '32'){
+                $rank = 1;
+            }elseif ($is_exist['scope'] == '31'){
+                $rank = 2;
+            }elseif ($is_exist['scope'] == '30'){
+                $rank = 3;
+            }else{
+                exit(json_encode([
+                    'code' => 400,
+                    'msg' => '无该管理员！'
+                ]));
+            }
+            return json([
+                'code' => 200,
+                'msg' => [
+                    'rank' => $rank,
+                    'token' => $tk
+                ]
+            ]);
         }elseif ($type=='B002'){
             $result = $user->get_admin_name();
             return $result;
@@ -343,11 +397,11 @@ class Index extends Collection
             //生成签退二维码
             $result = $Super->create_sign_out_code($data);
             return $result;
+        }elseif ($type == 'B021'){
+            $result = $Super->change_single_state($data);
+            return $result;
         }
-//        elseif ($type == 'B021'){
-//            $result = $Super->change_single_state($data);
-//            return $result;
-//        }elseif ($type == 'B022'){
+//          elseif ($type == 'B022'){
 //            $result = $Super->create_single_meeting($data);
 //            return $result;
 //        }
@@ -436,13 +490,78 @@ class Index extends Collection
             $result = $Super->apply_meeting(json_decode($data,true));
             return $result;
         }elseif($type == 'B034'){
-            //审核会议
+            //展示所有审核会议
             $result = $Super->show_check_all_meeting($data);
+            return $result;
+        }elseif($type == 'B035'){
+            //展示审核会议的学期
+            $result = $Super->show_check_term();
+            return $result;
+        }elseif($type == 'B036'){
+            //展示单个审核会议
+            $result = $Super->show_single_check_meeting($data);
+            return $result;
+        }elseif($type == 'B037'){
+            //同意审核
+            $result = $Super->agree_apply($data);
+            return $result;
+        }elseif($type == 'B038'){
+            //同意审核
+            $result = $Super->disagree_apply($data);
+            return $result;
+        }elseif($type == 'B039'){
+            //修改会议信息
+            $result = $Super->change_check_meeting(json_decode($data,true));
+            return $result;
+        }elseif($type == 'B040'){
+            //删除待会议信息
+            $result = $Super->delete_check_meeting($data);
+            return $result;
+        }elseif($type == 'B041'){
+            $secret = $TokenModel->checkUser();
+            if ((int)$secret < 31){
+                exit(json_encode([
+                    'code' => 403,
+                    'msg' => '权限不足！'
+                ]));
+            }
+            $select = Db::table('user')
+                ->distinct(true)
+                ->field('major')
+                ->select();
+            if (!$select){
+                $result = json_encode([
+                    'code' => 200,
+                    'msg' => []
+                ]);
+            }else{
+                $info = [];
+                $i = 0;
+                foreach ($select as $item){
+                    $info[$i] = $item['major'];
+                    $i++;
+                }
+                $result = json_encode([
+                    'code' => 200,
+                    'msg' => $info
+                ]);
+            }
+            return $result;
+        }elseif($type == 'B042'){
+            //删除用户
+            $result = $Super->delete_user($data);
+            return $result;
+        }elseif($type == 'B043'){
+            //返回年级
+            $result = $Super->return_grade();
+            return $result;
+        }elseif ($type == 'B044'){
+            $result = $Super->change_start_single_state($data);
             return $result;
         }
 //        elseif ($type == 'BBBB'){
 //            //搜索出勤详情导出
-//            $result = $Super->in(COMMON_PATH.'static/member.xlsx');
+//            $result = $Super->in(COMMON_PATH.'static/member.xls',0,2,0,4);
 //            return $result;
 ////
 ////            //删除测试账号

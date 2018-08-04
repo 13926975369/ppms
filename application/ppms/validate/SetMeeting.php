@@ -26,7 +26,9 @@ class SetMeeting extends BaseValidate
         'term3' => 'require|number|length:1',
         'enter_begin' => 'require|timecheck',
         'enter_end' => 'require|timecheck',
-        'end_time' => 'require|endcheck'
+        'end_time' => 'require|endcheck',
+        'meeting_type' => 'require',
+        'department' => 'require'
     ];
 
     protected $message = [
@@ -42,7 +44,9 @@ class SetMeeting extends BaseValidate
         'term3.require' => '学期不能为空！',
         'enter_begin.require' => '报名开始时间不能为空！',
         'enter_end.require' => '报名结束时间不能为空！',
-        'end_time.require' => '结束时间不能为空！'
+        'end_time.require' => '结束时间不能为空！',
+        'meeting_type.require' => '会议类型不能为空！',
+        'department.require' => '开课部门不能为空！'
     ];
 
     protected $field = [
@@ -58,6 +62,8 @@ class SetMeeting extends BaseValidate
         'term3' => '学期',
         'enter_begin' => '报名开始时间',
         'enter_end' => '报名结束时间',
+        'department' => '开课部门',
+        'meeting_type' => '会议类型'
     ];
 
     protected function fourcheck($value,$rule = '',$date = '',$field=''){
@@ -96,12 +102,12 @@ class SetMeeting extends BaseValidate
     }
 
     protected function timecheck($value,$rule = '',$date = '',$field=''){
-        if(preg_match("/^[0-9]{4}\-[0-9]{2}\-[0-9]{2}\-[0-9]{2}\-[0-9]{2}$/",$value)){
+        if(preg_match("/^[0-9]{4}\-[0-9]{2}\-[0-9]{2}\-[0-9]{2}\:[0-9]{2}$/",$value)){
             return true;
         }else{
             exit(json_encode([
                 'code' => 400,
-                'msg' => '报名时间不符合xxxx-xx-xx-xx-xx！'
+                'msg' => '报名时间不符合xxxx-xx-xx-xx:xx！'
             ]));
         }
     }
