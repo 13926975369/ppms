@@ -28,7 +28,11 @@ class SetMeeting extends BaseValidate
         'enter_end' => 'require|timecheck',
         'end_time' => 'require|endcheck',
         'meeting_type' => 'require',
-        'department' => 'require'
+        'department' => 'require',
+        'period' => 'require',
+        'description' => 'require',
+        'member' => 'require',
+        'people' => 'require'
     ];
 
     protected $message = [
@@ -46,6 +50,10 @@ class SetMeeting extends BaseValidate
         'enter_end.require' => '报名结束时间不能为空！',
         'end_time.require' => '结束时间不能为空！',
         'meeting_type.require' => '会议类型不能为空！',
+        'people.require' => '人数不能为空！',
+        'description.require' => '会议描述不能为空！',
+        'period.require' => '学时不能为空！',
+        'member.require' => '参与年级学院不能为空！',
         'department.require' => '开课部门不能为空！'
     ];
 

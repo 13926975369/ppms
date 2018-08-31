@@ -2,8 +2,8 @@
 /**
  * Created by PhpStorm.
  * User: 63254
- * Date: 2018/2/25
- * Time: 11:41
+ * Date: 2018/8/27
+ * Time: 16:18
  */
 
 namespace app\ppms\validate;
@@ -11,20 +11,21 @@ namespace app\ppms\validate;
 
 use app\ppms\exception\BaseException;
 
-class Search extends BaseValidate
+class AttendCheck extends BaseValidate
 {
     protected $rule = [
-        'search_key' => 'require',
+        'id' => 'require|number',
         'term' => 'require|termcheck',
     ];
 
     protected $message = [
-        'search_key.require' => '搜索词不能为空！',
+        'id.require' => 'id不能为空！',
         'term.require' => '学期不能为空！',
+        'id.number' =>  'id必须为数字！',
     ];
 
     protected $field = [
-        'search_key' => '搜索词',
+        'id' => 'id',
         'term' => '学期',
     ];
 
@@ -37,4 +38,5 @@ class Search extends BaseValidate
             ]);
         }
     }
+
 }

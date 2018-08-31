@@ -96,4 +96,28 @@ class BaseModel extends Model
             return $all_period;
         }
     }
+
+    //查学时的封装器
+    protected function new_find_period($user_id, $term = 'all'){
+        if ($term == 'all'){
+            $member = Db::table('user')
+                ->where([
+                    'id' => $user_id,
+                ])->find();
+            $all_period = $member['period'];
+            return $all_period;
+        }else{
+            $member = Db::table('period')
+                ->where([
+                    'user_id' => $user_id,
+                    'term' => $term
+                ])->find();
+            if (!$member){
+                //没找到就是0学时
+                return 0;
+            }
+            $all_period = $member['period'];
+            return $all_period;
+        }
+    }
 }

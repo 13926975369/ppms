@@ -16,6 +16,7 @@ return [
     'cookie_time' => 10800,
     'image_root' => 'https://ppms.yiluzou.cn/ppms/public/',
     'user_salt' => 'Quanta',
+    'init_password' => '123456',
     'code_time' => 108000
 ];
 

@@ -107,9 +107,22 @@ class Index extends Collection
             $id = $is_exist['id'];
             //获得token
             $tk = $TokenModel->get_token($data['code'],$id);
+
+            //查一下用户是否填入邮箱，没有的话，填入邮箱
+            $email = Db::table('user')
+                ->where(['id' => $id])
+                ->find();
+            //0代表还没绑定邮箱
+            $state = 0;
+            if ($email['email'] != null){
+                //1代表绑定邮箱了
+                $state = 1;
+            }
+
             return json_encode([
                 'code' => 200,
-                'msg' => $tk
+                'msg' => $tk,
+                'state' => $state
             ]);
         }elseif ($type == 'A002'){
             //修改密码
@@ -218,6 +231,21 @@ class Index extends Collection
             return $result;
         }elseif ($type == 'A012'){
             $result = $user->sign_in_out($data);
+            return $result;
+        }elseif ($type == 'A013'){
+            $result = $user->sign_late($data);
+            return $result;
+        }elseif ($type == 'A014'){
+            $result = $user->discussion($data);
+            return $result;
+        }elseif ($type == 'A015'){
+            $result = $Super->show_advance_notice();
+            return $result;
+        }elseif ($type == 'A016'){
+            $result = $user->bind_email($data);
+            return $result;
+        }elseif ($type == 'A017'){
+            $result = $user->collect_formId($data);
             return $result;
         }elseif ($type == 'B001'){
             //管理员登录
@@ -405,13 +433,13 @@ class Index extends Collection
 //            $result = $Super->create_single_meeting($data);
 //            return $result;
 //        }
-//        elseif ($type == 'B023'){
-//            $result = $Super->be_start($data);
-//            return $result;
-//        }elseif ($type == 'B024'){
-//            $result = $Super->be_end($data);
-//            return $result;
-//        }
+        elseif ($type == 'B023'){
+            $result = $Super->be_start($data);
+            return $result;
+        }elseif ($type == 'B024'){
+            $result = $Super->be_end($data);
+            return $result;
+        }
         elseif($type == 'B025'){
             $id = $TokenModel->get_id();
             $secret = $TokenModel->checkUser();
@@ -436,24 +464,40 @@ class Index extends Collection
                 //信息数组
                 $info = [];
                 foreach ($select as $v){
-                    if ($v['major'] != $now_major){
-                        $now_major = $v['major'];
-                        $flag++;
-                    }
-                    $info[$flag]['major'] = $now_major;
-                    if (!array_key_exists('year',$info[$flag])){
-                        $info[$flag]['year'] = [];
-                    }
-                    $year = $info[$flag]['year'];
                     $now_year = substr($v['number'],0,4);
-                    if (!in_array($now_year,$year)){
-                        array_push($info[$flag]['year'],$now_year);
+                    if (array_key_exists($v['major'],$info)){
+                        if (!in_array($now_year,$info[$v['major']])){
+                            $num = count($info[$v['major']]);
+                            $info[$v['major']][$num] = $now_year;
+                        }
+                    }else{
+                        $info[$v['major']][0] = $now_year;
                     }
+//                    if ($v['major'] != $now_major){
+//                        $now_major = $v['major'];
+//                        $flag++;
+//                    }
+//                    $info[$flag]['major'] = $now_major;
+//                    if (!array_key_exists('year',$info[$flag])){
+//                        $info[$flag]['year'] = [];
+//                    }
+//                    $year = $info[$flag]['year'];
+//                    $now_year = substr($v['number'],0,4);
+//                    if (!in_array($now_year,$year)){
+//                        array_push($info[$flag]['year'],$now_year);
+//                    }
+                }
+                $info_final = [];
+                foreach ($info as $m => $n){
+                    //外数组长度
+                    $a_num = count($info_final);
+                    $info_final[$a_num]['major'] = $m;
+                    $info_final[$a_num]['year'] = $n;
                 }
 
                 $result = json_encode([
                     'code' => 200,
-                    'msg' => $info
+                    'msg' => $info_final
                 ]);
             }
             return $result;
@@ -506,7 +550,7 @@ class Index extends Collection
             $result = $Super->agree_apply($data);
             return $result;
         }elseif($type == 'B038'){
-            //同意审核
+            //不同意审核
             $result = $Super->disagree_apply($data);
             return $result;
         }elseif($type == 'B039'){
@@ -558,14 +602,134 @@ class Index extends Collection
         }elseif ($type == 'B044'){
             $result = $Super->change_start_single_state($data);
             return $result;
+        }elseif ($type == 'B050'){
+            //生成迟到二维码
+            $result = $Super->create_late_code($data);
+            return $result;
+        }elseif ($type == 'B046'){
+            //新增预告
+            $result = $Super->set_advance_notice($data);
+            return $result;
+        }elseif ($type == 'B047'){
+            //修改预告
+            $result = $Super->edit_advance_notice($data);
+            return $result;
+        }elseif ($type == 'B048'){
+            //展示预告
+            $result = $Super->show_advance_notice();
+            return $result;
+        }elseif ($type == 'B049'){
+            //学院查看
+            $result = $Super->show_major_period($data);
+            return $result;
+        }elseif ($type == 'B051'){
+            //返回学院查看上面的学期种类
+            $result = $Super->get_major_period_term();
+            return $result;
+        }elseif ($type == 'B052'){
+            //发布会议
+            $result = $Super->set_meeting_wx(json_decode($data,true));
+            return $result;
+        }elseif ($type == 'B053'){
+            //修改会议
+            $result = $Super->change_meeting_wx(json_decode($data,true));
+            return $result;
+        }elseif($type == 'B054'){
+            //审核会议
+            $result = $Super->apply_meeting_wx(json_decode($data,true));
+            return $result;
+        }elseif($type == 'B055'){
+            //修改会议信息
+            $result = $Super->change_check_meeting_wx(json_decode($data,true));
+            return $result;
+        }elseif ($type == 'B056'){
+            $result = $user->show_meeting_average($data);
+            return $result;
+        }elseif ($type == 'B057'){
+            $result = $user->show_meeting_comment($data);
+            return $result;
+        }elseif ($type == 'B058'){
+            $result = $Super->delete_advance_notice($data);
+            return $result;
+        }elseif ($type == 'B059'){
+            $result = $Super->init_student_pwd($data);
+            return $result;
+        }elseif($type == 'B060'){
+            //展示所有审核会议小程序
+            $result = $Super->show_check_all_meeting_wx($data);
+            return $result;
+        }elseif($type == 'B061'){
+            //展示单个审核会议
+            $result = $Super->show_single_check_meeting_wx($data);
+            return $result;
+        }elseif($type == 'B062'){
+            //新的出勤查看
+            $result = $Super->attendance_check_new($data);
+            return $result;
+        }elseif($type == 'B063'){
+            $id = $TokenModel->get_id();
+            $result = $Super->show_meeting_sign_wx($data);
+            return $result;
         }
-//        elseif ($type == 'BBBB'){
+//        elseif ($type == 'update_major_period'){
+//            //更新学院查看
+//            $result = Db::table('meeting_major')->distinct('major')->field('major')->select();
+//            Db::startTrans();
+//            foreach ($result as $k => $v){
+//                if (!Db::table('major_period')->where(['term'=>'all','major'=>$v['major']])->find()){
+//                    $deal = Db::table('major_period')->insert([
+//                        'term' => 'all',
+//                        'major' => $v['major']
+//                    ]);
+//                    if (!$deal){
+//                        exit(json_encode([
+//                            'code' => 400,
+//                            'msg' => 'error'
+//                        ]));
+//                    }
+//                }
+//
+//            }
+//            Db::commit();
+//            return json("成功");
+//        }
+        elseif ($type == 'BBBB'){
 //            //搜索出勤详情导出
 //            $result = $Super->in(COMMON_PATH.'static/member.xls',0,2,0,4);
 //            return $result;
-////
-////            //删除测试账号
-////            Db::table('user')->where('id' ,'>',267)->delete();
+
+//            //二级权限导入
+//            $result = $Super->second_power_in(COMMON_PATH.'static/second_power_member.xls',0,0,2,1);
+//            return $result;
+
+//            //删除奇奇怪怪的学院
+//            $result = $Super->delete_special_major(COMMON_PATH.'static/member.xls',0,2,0,4);
+//            return $result;
+//
+//            //更新学院的行政顺序
+//            $result = $Super->update_major_order(COMMON_PATH.'static/order.xls',0,1,0);
+//            return $result;
+//            Cache::clear();
+//
+//            //删除测试账号
+//            Db::table('user')->where('id' ,'>',267)->delete();
+        }
+//        elseif ($type == 'BAAA'){
+//            $form_id = Cache::get(3);
+//            if (!$form_id){
+//                //没有的情况
+//                $form_id = [0 => $data['form_id']];
+//            }else{
+//                $index = count($form_id);
+//                $form_id[$index] = $data['form_id'];
+//            }
+//            //收集form_id并存储7天
+//            $request = cache(3, $form_id, 7 * 24 * 60 * 60);
+//            if (!$request){
+//                var_dump('缓存错误');
+//            }
+//        }elseif ($type == 'BAAB'){
+//            var_dump(Cache::get(3));
 //        }
         else{
             exit(json_encode([

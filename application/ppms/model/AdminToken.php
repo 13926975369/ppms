@@ -80,20 +80,20 @@ class AdminToken extends Token
                 $user = Db::table('super')->where([
                     'id' => $id
                 ])->field('openid')->find();
-                $user_openid = $user['openid'];
-                if ($user_openid == NULL){
-                    Db::table('super')->where([
-                        'id' => $id
-                    ])->update([
-                        'openid' => $openid
-                    ]);
-                }else{
-                    if ($user_openid != $openid){
-                        throw new LoginException([
-                            'msg' => '微信号与用户账号不匹配！'
-                        ]);
-                    }
-                }
+//                $user_openid = $user['openid'];
+//                if ($user_openid == NULL){
+//                    Db::table('super')->where([
+//                        'id' => $id
+//                    ])->update([
+//                        'openid' => $openid
+//                    ]);
+//                }else{
+//                    if ($user_openid != $openid){
+//                        throw new LoginException([
+//                            'msg' => '微信号与用户账号不匹配！'
+//                        ]);
+//                    }
+//                }
                 $this->uid = $id;
                 //这是一个拼接token的函数，32随机+时间戳+salt
                 //key就是token，value包含uid，scope
